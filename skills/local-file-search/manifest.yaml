@@ -1,0 +1,39 @@
+api_version: personal-ai-os/v1
+kind: Skill
+metadata:
+  name: local-file-search
+  display_name: Local File Search
+  version: 0.1.0
+  description: 로컬 디렉터리 하위에서 파일명 또는 내용이 검색어와 일치하는 파일을 찾는다.
+  license: MIT
+  author: local
+  tags:
+    - files
+    - search
+    - development
+runtime:
+  type: python
+  entrypoint: workflow.py
+  timeout_seconds: 30
+  network_access: none
+models:
+  preferred: []
+  local_only_supported: true
+capabilities:
+  tools:
+    - files.search
+  resources: []
+permissions:
+  risk_level: read
+  scopes:
+    - files.read
+input_schema: input.schema.json
+output_schema: output.schema.json
+verification:
+  required: true
+  checks:
+    - evidence_present
+    - root_within_allowed_paths
+rollback:
+  supported: false
+  strategy: not_applicable_read_only

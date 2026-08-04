@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "github-issues-lookup input",
+  "type": "object",
+  "properties": {
+    "repo": {
+      "type": "string",
+      "description": "owner/repo 형식의 GitHub 저장소 식별자 (예: anthropics/claude-code)"
+    },
+    "state": {
+      "type": "string",
+      "enum": ["open", "closed", "all"],
+      "default": "open",
+      "description": "조회할 이슈 상태"
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "default": 20,
+      "description": "반환할 최대 이슈 개수"
+    }
+  },
+  "required": ["repo"],
+  "additionalProperties": false
+}

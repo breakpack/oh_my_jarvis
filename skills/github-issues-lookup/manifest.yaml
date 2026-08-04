@@ -1,0 +1,39 @@
+api_version: personal-ai-os/v1
+kind: Skill
+metadata:
+  name: github-issues-lookup
+  display_name: GitHub Issues Lookup
+  version: 0.1.0
+  description: 지정한 GitHub 저장소의 이슈 목록을 상태(open/closed/all)와 개수 제한 조건으로 조회한다.
+  license: MIT
+  author: local
+  tags:
+    - github
+    - issues
+    - development
+runtime:
+  type: python
+  entrypoint: workflow.py
+  timeout_seconds: 30
+  network_access: allowlist
+models:
+  preferred: []
+  local_only_supported: true
+capabilities:
+  tools:
+    - github.list_issues
+  resources: []
+permissions:
+  risk_level: read
+  scopes:
+    - github.read
+input_schema: input.schema.json
+output_schema: output.schema.json
+verification:
+  required: true
+  checks:
+    - evidence_present
+    - repo_matches_request
+rollback:
+  supported: false
+  strategy: not_applicable_read_only

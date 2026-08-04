@@ -1,0 +1,30 @@
+api_version: personal-ai-os/v1
+kind: Skill
+metadata:
+  name: notion-lookup
+  display_name: Notion Lookup
+  version: 0.1.0
+  description: Notion 워크스페이스에서 페이지/데이터베이스 항목을 검색한다 (Stub — notion.search_pages Tool 미구현).
+  license: MIT
+  author: local
+  tags:
+    - notion
+    - knowledge
+runtime:
+  type: python
+  entrypoint: workflow.py
+  timeout_seconds: 30
+  network_access: allowlist
+models:
+  preferred: []
+  local_only_supported: true
+capabilities:
+  tools:
+    - notion.search_pages
+  resources: []
+permissions:
+  risk_level: read
+  scopes:
+    - notion.read
+input_schema: input.schema.json
+output_schema: output.schema.json

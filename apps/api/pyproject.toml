@@ -19,6 +19,7 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.49b0",
     "pypdf>=5.0",
     "python-multipart>=0.0.12",
+    "mcp>=1.0",
 ]
 
 [dependency-groups]

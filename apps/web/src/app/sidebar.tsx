@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { KnowledgePanel } from "./knowledge-panel";
 import { MemoryPanel } from "./memory-panel";
+import { SkillsPanel } from "./skills-panel";
 
 type Project = {
   id: string;
@@ -193,6 +194,7 @@ export function Sidebar({
 
       <MemoryPanel activeProjectId={activeProjectId} />
       <KnowledgePanel activeProjectId={activeProjectId} />
+      <SkillsPanel activeProjectId={activeProjectId} />
     </aside>
   );
 }

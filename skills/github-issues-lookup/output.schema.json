@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "github-issues-lookup output",
+  "type": "object",
+  "properties": {
+    "success": { "type": "boolean" },
+    "summary": { "type": "string" },
+    "data": {
+      "type": ["object", "null"],
+      "properties": {
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "number": { "type": "integer" },
+              "title": { "type": "string" },
+              "state": { "type": "string" },
+              "url": { "type": "string" },
+              "createdAt": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "error": { "type": ["string", "null"] }
+  },
+  "required": ["success", "summary"]
+}

@@ -1,0 +1,30 @@
+api_version: personal-ai-os/v1
+kind: Skill
+metadata:
+  name: calendar-lookup
+  display_name: Calendar Lookup
+  version: 0.1.0
+  description: 지정한 기간의 캘린더 일정을 조회한다 (Stub — calendar.list_events Tool 미구현).
+  license: MIT
+  author: local
+  tags:
+    - calendar
+    - productivity
+runtime:
+  type: python
+  entrypoint: workflow.py
+  timeout_seconds: 30
+  network_access: allowlist
+models:
+  preferred: []
+  local_only_supported: true
+capabilities:
+  tools:
+    - calendar.list_events
+  resources: []
+permissions:
+  risk_level: read
+  scopes:
+    - calendar.read
+input_schema: input.schema.json
+output_schema: output.schema.json

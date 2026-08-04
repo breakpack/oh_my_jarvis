@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "local-file-search output",
+  "type": "object",
+  "properties": {
+    "success": { "type": "boolean" },
+    "summary": { "type": "string" },
+    "data": {
+      "type": ["object", "null"],
+      "properties": {
+        "matches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": { "type": "string", "description": "워크스페이스 루트 기준 상대 경로" },
+              "matched_by": { "type": "string", "enum": ["filename", "content"] }
+            }
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "error": { "type": ["string", "null"] }
+  },
+  "required": ["success", "summary"]
+}

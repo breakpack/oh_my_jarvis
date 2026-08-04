@@ -14,6 +14,7 @@ import httpx
 import typer
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from rich.console import Console
+from rich.markdown import Markdown
 from rich.table import Table
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -602,6 +603,227 @@ def knowledge_search(
             lambda: search_knowledge(client, settings.api_base_url, query, project, top_k)
         )
     console.print(build_knowledge_table(results or []))
+
+
+SKILLS_ENDPOINT = "/api/v1/skills"
+
+
+def fetch_skills(client: httpx.Client, base_url: str, query: str | None) -> dict[str, Any]:
+    params: dict[str, Any] = {}
+    if query is not None:
+        params["query"] = query
+    return _request_json(client, "GET", _api_url(base_url, SKILLS_ENDPOINT), params=params)
+
+
+def inspect_skill(client: httpx.Client, base_url: str, name: str) -> dict[str, Any]:
+    return _request_json(client, "GET", _api_url(base_url, f"{SKILLS_ENDPOINT}/{name}"))
+
+
+def enable_skill(client: httpx.Client, base_url: str, name: str) -> Any:
+    return _request_json(client, "POST", _api_url(base_url, f"{SKILLS_ENDPOINT}/{name}/enable"))
+
+
+def disable_skill(client: httpx.Client, base_url: str, name: str) -> Any:
+    return _request_json(client, "POST", _api_url(base_url, f"{SKILLS_ENDPOINT}/{name}/disable"))
+
+
+def run_skill(
+    client: httpx.Client,
+    base_url: str,
+    name: str,
+    arguments: dict[str, Any],
+    project_id: str | None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"arguments": arguments}
+    if project_id is not None:
+        payload["project_id"] = project_id
+    return _request_json(
+        client, "POST", _api_url(base_url, f"{SKILLS_ENDPOINT}/{name}/run"), json=payload
+    )
+
+
+def fetch_skill_audit(client: httpx.Client, base_url: str, name: str) -> list[dict[str, Any]]:
+    return _request_json(client, "GET", _api_url(base_url, f"{SKILLS_ENDPOINT}/{name}/audit"))
+
+
+def build_skills_table(skills: list[dict[str, Any]]) -> Table:
+    table = Table(title="Skills")
+    table.add_column("Name")
+    table.add_column("Display Name")
+    table.add_column("Version")
+    table.add_column("Risk Level")
+    table.add_column("Enabled")
+    for skill in skills:
+        enabled_text = "[green]yes[/green]" if skill.get("enabled") else "[dim]no[/dim]"
+        table.add_row(
+            str(skill.get("name", "")),
+            str(skill.get("display_name", "")),
+            str(skill.get("version", "")),
+            str(skill.get("risk_level", "")),
+            enabled_text,
+        )
+    return table
+
+
+def print_invalid_skills(invalid: list[dict[str, Any]]) -> None:
+    if not invalid:
+        return
+    console.print("[yellow]invalid skills (failed to load):[/yellow]")
+    for item in invalid:
+        path = item.get("path", "")
+        error = item.get("error", "")
+        console.print(f"  [yellow]- {path}: {error}[/yellow]")
+
+
+def render_skill_detail(detail: dict[str, Any]) -> None:
+    name = detail.get("name", "")
+    display_name = detail.get("display_name") or name
+    version = detail.get("version", "")
+    risk_level = detail.get("risk_level", "")
+    enabled = detail.get("enabled")
+    description = detail.get("description", "")
+    tags = detail.get("tags") or []
+
+    console.print(f"[bold]{display_name}[/bold] ({name}) v{version}")
+    console.print(f"risk_level={risk_level}  enabled={'yes' if enabled else 'no'}")
+    if tags:
+        console.print(f"tags: {', '.join(str(t) for t in tags)}")
+    if description:
+        console.print(description)
+
+    skill_md = detail.get("skill_md")
+    if skill_md:
+        console.print()
+        console.print(Markdown(str(skill_md)))
+
+    manifest = detail.get("manifest")
+    if manifest:
+        console.print()
+        console.print("[dim]manifest:[/dim]")
+        console.print(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+
+def render_skill_result(result: dict[str, Any]) -> None:
+    success = bool(result.get("success"))
+    color = "green" if success else "red"
+    status_text = "SUCCESS" if success else "FAILED"
+    console.print(f"[{color}]{status_text}[/{color}] {result.get('summary', '')}")
+
+    error = result.get("error")
+    if error:
+        err_console.print(f"[red]error:[/red] {error}")
+
+    for label, key in (("evidence", "evidence"), ("artifacts", "artifacts")):
+        items = result.get(key) or []
+        if items:
+            console.print(f"[dim]{label}:[/dim]")
+            for item in items:
+                console.print(f"  - {item}")
+
+    rollback_token = result.get("rollback_token")
+    if rollback_token:
+        console.print(f"[dim]rollback token: {rollback_token}[/dim]")
+
+
+def build_skill_audit_table(entries: list[dict[str, Any]]) -> Table:
+    table = Table(title="Skill Audit Log")
+    table.add_column("ID")
+    table.add_column("Action")
+    table.add_column("Result")
+    table.add_column("Risk")
+    table.add_column("Created")
+    for entry in entries:
+        result_value = entry.get("result", entry.get("status", ""))
+        table.add_row(
+            str(entry.get("id", "")),
+            str(entry.get("action", "")),
+            str(result_value),
+            str(entry.get("risk_level", "")),
+            str(entry.get("created_at", "")),
+        )
+    return table
+
+
+skill_app = typer.Typer(help="Discover, inspect, and run skills")
+app.add_typer(skill_app, name="skill")
+
+
+@skill_app.command("list")
+def skill_list(
+    query: str | None = typer.Option(
+        None, "--query", help="Filter skills by name, description, or tag"
+    ),
+) -> None:
+    """List installed skills."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        result = _run_api_call(lambda: fetch_skills(client, settings.api_base_url, query))
+    result = result or {}
+    console.print(build_skills_table(result.get("skills") or []))
+    print_invalid_skills(result.get("invalid") or [])
+
+
+@skill_app.command("inspect")
+def skill_inspect(name: str) -> None:
+    """Show manifest and SKILL.md details for a skill."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        detail = _run_api_call(lambda: inspect_skill(client, settings.api_base_url, name))
+    render_skill_detail(detail or {})
+
+
+@skill_app.command("enable")
+def skill_enable(name: str) -> None:
+    """Enable a skill."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        _run_api_call(lambda: enable_skill(client, settings.api_base_url, name))
+    console.print(f"[green]enabled:[/green] {name}")
+
+
+@skill_app.command("disable")
+def skill_disable(name: str) -> None:
+    """Disable a skill."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        _run_api_call(lambda: disable_skill(client, settings.api_base_url, name))
+    console.print(f"[yellow]disabled:[/yellow] {name}")
+
+
+@skill_app.command("run")
+def skill_run(
+    name: str,
+    input_json: str = typer.Option(..., "--input", help="JSON-encoded arguments object"),
+    project: str | None = typer.Option(None, "--project", help="Scope execution to a project"),
+) -> None:
+    """Run a skill with the given arguments."""
+    try:
+        arguments = json.loads(input_json)
+    except json.JSONDecodeError as e:
+        err_console.print(f"error: --input is not valid JSON: {e}")
+        raise typer.Exit(code=1) from e
+    if not isinstance(arguments, dict):
+        err_console.print("error: --input must decode to a JSON object")
+        raise typer.Exit(code=1)
+
+    settings = Settings()
+    with httpx.Client(timeout=60.0) as client:
+        result = _run_api_call(
+            lambda: run_skill(client, settings.api_base_url, name, arguments, project)
+        )
+    result = result or {}
+    render_skill_result(result)
+    if not result.get("success", False):
+        raise typer.Exit(code=1)
+
+
+@skill_app.command("audit")
+def skill_audit(name: str) -> None:
+    """Show recent audit log entries for a skill."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        entries = _run_api_call(lambda: fetch_skill_audit(client, settings.api_base_url, name))
+    console.print(build_skill_audit_table(entries or []))
 
 
 if __name__ == "__main__":

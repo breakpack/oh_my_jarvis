@@ -4,8 +4,8 @@
 
 ## 현재 상태
 
-- **Phase 0 ~ Phase 3: 완료** (`feat/phase-0` ~ `feat/phase-3` 브랜치)
-- **Phase 4 ~ Phase 10: 계획됨** — 각 Phase는 동일한 방식(오케스트레이션 병렬 개발 + `feat/phase-N` 브랜치)으로 이어서 진행한다.
+- **Phase 0 ~ Phase 4: 완료** (`feat/phase-0` ~ `feat/phase-4` 브랜치)
+- **Phase 5 ~ Phase 10: 계획됨** — 각 Phase는 동일한 방식(오케스트레이션 병렬 개발 + `feat/phase-N` 브랜치)으로 이어서 진행한다.
 
 ## Phase 목록
 
@@ -15,7 +15,7 @@
 | 1 | Local Chat Vertical Slice | Conversation/Message, Ollama Provider, SSE Streaming, Chat UI, CLI Chat, Local/Cloud 수동 선택, 기본 Audit | 완료 |
 | 2 | Project and Memory | Project CRUD, Active Project, Memory CRUD, Conversation Summary, Explicit remember/forget, Memory policy | 완료 |
 | 3 | Second Brain RAG | Native parser(pypdf, Docling은 교체 가능한 어댑터로 계획만), Chunking, Local embedding(bge-m3), Hybrid retrieval, Evidence UI, Knowledge CLI | 완료 |
-| 4 | Skill SDK and Read-only Tools | Skill manifest, SKILL.md loader, Schema validation, Skill Registry/Resolver, MCP Adapter, Read-only Skill, Skill CLI | 계획됨 |
+| 4 | Skill SDK and Read-only Tools | Skill manifest, SKILL.md loader, Schema validation, Skill Registry/Resolver, MCP Adapter(실제 stdio 연동), github-issues-lookup/local-file-search Skill, calendar/notion Stub, Skill CLI | 완료 |
 | 5 | Approval and Mutation | Policy Engine, Approval Manager, Pause/Resume, Calendar/Task/Notion/GitHub/Email 쓰기, Rollback | 계획됨 |
 | 6 | Development Agent | Workspace, Sandbox, Repository scan, Code search, Patch, Formatter/Linter/Test, Diff, OpenHands Adapter 평가 | 계획됨 |
 | 7 | Browser Agent | Playwright Tool, Browser Use Adapter, Browser approval, Prompt injection guard | 계획됨 |
