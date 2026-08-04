@@ -2,6 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 
+type Evidence = {
+  document_id: string;
+  document_title: string;
+  chunk_id: string;
+  page?: number | null;
+  score?: number;
+};
+
 type Message = {
   id: string;
   role: "user" | "assistant";
@@ -9,6 +17,7 @@ type Message = {
   model?: string;
   provider?: string;
   error?: string;
+  evidence?: Evidence[];
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -159,6 +168,9 @@ export function ChatView({
             updateAssistant(assistantId, {
               model: parsed.model,
               provider: parsed.provider,
+              evidence: Array.isArray(parsed.evidence)
+                ? parsed.evidence
+                : undefined,
             });
             if (parsed.conversation_id) {
               loadedIdRef.current = parsed.conversation_id;
@@ -229,6 +241,19 @@ export function ChatView({
                   {m.model}
                   {m.provider ? ` · ${m.provider}` : ""}
                 </span>
+              )}
+              {m.evidence && m.evidence.length > 0 && (
+                <div className="mt-1 flex flex-col gap-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+                  <span className="font-medium text-zinc-500 dark:text-zinc-400">
+                    출처
+                  </span>
+                  {m.evidence.map((ev) => (
+                    <span key={ev.chunk_id}>
+                      {ev.document_title}
+                      {typeof ev.page === "number" ? ` p.${ev.page}` : ""}
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
           ))}

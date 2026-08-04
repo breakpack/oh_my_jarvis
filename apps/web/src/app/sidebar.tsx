@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { KnowledgePanel } from "./knowledge-panel";
 import { MemoryPanel } from "./memory-panel";
 
 type Project = {
@@ -191,6 +192,7 @@ export function Sidebar({
       </section>
 
       <MemoryPanel activeProjectId={activeProjectId} />
+      <KnowledgePanel activeProjectId={activeProjectId} />
     </aside>
   );
 }

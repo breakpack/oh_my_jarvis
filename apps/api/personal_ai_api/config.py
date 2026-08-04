@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     ollama_base_url: str = "http://localhost:11434"
     ollama_local_fast_model: str = "gemma4:e2b"
+    ollama_embedding_model: str = "bge-m3:latest"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     log_level: str = "INFO"

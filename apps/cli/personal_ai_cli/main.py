@@ -7,6 +7,7 @@ import json
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -506,6 +507,101 @@ def memory_forget(memory_id: str) -> None:
     with httpx.Client(timeout=10.0) as client:
         _run_api_call(lambda: forget_memory(client, settings.api_base_url, memory_id))
     console.print(f"[green]forgotten:[/green] {memory_id}")
+
+
+def ingest_document(
+    client: httpx.Client,
+    base_url: str,
+    file_path: Path,
+    project_id: str | None,
+    title: str | None,
+) -> dict[str, Any]:
+    data: dict[str, Any] = {}
+    if project_id is not None:
+        data["project_id"] = project_id
+    if title is not None:
+        data["title"] = title
+    with file_path.open("rb") as f:
+        files = {"file": (file_path.name, f)}
+        return _request_json(
+            client,
+            "POST",
+            _api_url(base_url, "/api/v1/documents"),
+            data=data,
+            files=files,
+        )
+
+
+def search_knowledge(
+    client: httpx.Client,
+    base_url: str,
+    query: str,
+    project_id: str | None,
+    top_k: int | None,
+) -> list[dict[str, Any]]:
+    payload: dict[str, Any] = {"query": query}
+    if project_id is not None:
+        payload["project_id"] = project_id
+    if top_k is not None:
+        payload["top_k"] = top_k
+    return _request_json(
+        client, "POST", _api_url(base_url, "/api/v1/knowledge/search"), json=payload
+    )
+
+
+def build_knowledge_table(results: list[dict[str, Any]]) -> Table:
+    table = Table(title="Knowledge")
+    table.add_column("Title")
+    table.add_column("Page")
+    table.add_column("Score")
+    table.add_column("Snippet")
+    for item in results:
+        table.add_row(
+            str(item.get("document_title", "")),
+            str(item.get("page", "")),
+            str(item.get("score", "")),
+            _truncate(str(item.get("content", ""))),
+        )
+    return table
+
+
+knowledge_app = typer.Typer(help="Ingest and search the knowledge base")
+app.add_typer(knowledge_app, name="knowledge")
+
+
+@knowledge_app.command("ingest")
+def knowledge_ingest(
+    path: Path,
+    project: str | None = typer.Option(None, "--project", help="Attach to a project id"),
+    title: str | None = typer.Option(None, "--title", help="Document title"),
+) -> None:
+    """Ingest a local file into the knowledge base."""
+    if not path.is_file():
+        err_console.print(f"error: file not found: {path}")
+        raise typer.Exit(code=1)
+    settings = Settings()
+    with httpx.Client(timeout=60.0) as client:
+        document = _run_api_call(
+            lambda: ingest_document(client, settings.api_base_url, path, project, title)
+        )
+    doc_id = document.get("id", "")
+    chunk_count = document.get("chunk_count", "?")
+    console.print(f"[green]ingested:[/green] {doc_id} ({chunk_count} chunks)")
+
+
+@knowledge_app.command("search")
+def knowledge_search(
+    query: str,
+    project: str | None = typer.Option(None, "--project", help="Scope to a project id"),
+    top_k: int | None = typer.Option(None, "--top-k", help="Maximum number of results"),
+) -> None:
+    """Search the knowledge base."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        results = _run_api_call(
+            lambda: search_knowledge(client, settings.api_base_url, query, project, top_k)
+        )
+    console.print(build_knowledge_table(results or []))
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ type Memory = {
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
-function extractErrorMessage(body: unknown, fallback: string): string {
+export function extractErrorMessage(body: unknown, fallback: string): string {
   if (body && typeof body === "object") {
     const detail = (body as { detail?: unknown }).detail;
     if (typeof detail === "string") return detail;

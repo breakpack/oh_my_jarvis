@@ -32,3 +32,11 @@ async def get_or_create_default_user(
             await session.commit()
             await session.refresh(user)
         return str(user.id)
+
+
+async def get_default_user_id() -> str:
+    """No-arg wrapper so this can be used directly as a FastAPI `Depends`
+    target (and overridden in tests) — `get_or_create_default_user` itself
+    takes a `session_factory` param that FastAPI would otherwise try to
+    resolve as a request parameter."""
+    return await get_or_create_default_user()

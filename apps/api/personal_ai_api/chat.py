@@ -27,6 +27,11 @@ from personal_ai_api.chat_repository import (
     get_chat_repository,
 )
 from personal_ai_api.config import settings
+from personal_ai_api.knowledge_repository import (
+    KnowledgeRepository,
+    SearchResult,
+    get_knowledge_repository,
+)
 from personal_ai_api.memory_repository import (
     MemoryRepository,
     get_memory_repository,
@@ -37,6 +42,8 @@ router = APIRouter(prefix="/api/v1", tags=["chat"])
 
 RECENT_MESSAGES_WITH_SUMMARY = 12
 COMMAND_NAMES = {"/remember": "remember", "/forget": "forget", "/no-memory": "no_memory"}
+EVIDENCE_TOP_K = 5
+EVIDENCE_SNIPPET_CHARS = 200
 
 
 class ChatRequest(BaseModel):
@@ -74,6 +81,35 @@ def get_model_provider() -> ModelProvider:
 
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+def _evidence_system_message(results: list[SearchResult]) -> dict:
+    lines = []
+    for i, result in enumerate(results, start=1):
+        location = f" (p.{result.page})" if result.page is not None else ""
+        snippet = result.content[:EVIDENCE_SNIPPET_CHARS]
+        lines.append(f"{i}) {result.document_title}{location}: {snippet}")
+    return {
+        "role": "system",
+        "content": (
+            "Relevant documents:\n"
+            + "\n".join(lines)
+            + "\n답변에 이 문서 내용을 반영하고, 근거로 사용한 경우 자연스럽게 언급해라."
+        ),
+    }
+
+
+def _evidence_payload(results: list[SearchResult]) -> list[dict]:
+    return [
+        {
+            "document_id": r.document_id,
+            "document_title": r.document_title,
+            "chunk_id": r.chunk_id,
+            "page": r.page,
+            "score": r.score,
+        }
+        for r in results
+    ]
 
 
 def _parse_command(message: str) -> tuple[str | None, str]:
@@ -140,6 +176,7 @@ async def _run_command_turn(
             "message_id": assistant_message.id,
             "model": "system",
             "provider": "command",
+            "evidence": [],
         },
     )
 
@@ -165,6 +202,7 @@ async def post_chat(
     payload: ChatRequest,
     repository: ChatRepository = Depends(get_chat_repository),
     memory_repository: MemoryRepository = Depends(get_memory_repository),
+    knowledge_repository: KnowledgeRepository = Depends(get_knowledge_repository),
     provider: ModelProvider = Depends(get_model_provider),
 ) -> StreamingResponse:
     user_id = await repository.get_or_create_default_user()
@@ -211,6 +249,21 @@ async def post_chat(
     else:
         provider_messages = [{"role": m.role, "content": m.content} for m in history]
 
+    # SPEC §2.3/§8: ground the answer in the active project's documents when
+    # there is one. No pre-check for "does this project have any documents" —
+    # just try the search, and swallow empty results or failures (Ollama down,
+    # no embeddings yet, ...) so evidence lookup never blocks the chat turn.
+    evidence_results: list[SearchResult] = []
+    if payload.project_id:
+        try:
+            evidence_results = await knowledge_repository.search(
+                user_id, payload.message, project_id=payload.project_id, top_k=EVIDENCE_TOP_K
+            )
+        except Exception:
+            evidence_results = []
+    if evidence_results:
+        provider_messages = [_evidence_system_message(evidence_results), *provider_messages]
+
     async def event_stream() -> AsyncIterator[str]:
         started = time.monotonic()
         collected: list[str] = []
@@ -245,6 +298,7 @@ async def post_chat(
                     "message_id": assistant_message.id,
                     "model": provider.model,
                     "provider": provider.provider_name,
+                    "evidence": _evidence_payload(evidence_results),
                 },
             )
             await maybe_summarize_conversation(repository, provider, conversation_id)

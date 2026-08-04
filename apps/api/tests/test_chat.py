@@ -16,6 +16,7 @@ from personal_ai_api.chat_repository import (
     MessageRecord,
     get_chat_repository,
 )
+from personal_ai_api.knowledge_repository import SearchResult, get_knowledge_repository
 from personal_ai_api.main import app
 from personal_ai_api.memory_repository import (
     MemoryNotFound,
@@ -149,6 +150,21 @@ class FakeMemoryRepository:
         return len(matches)
 
 
+class FakeKnowledgeRepository:
+    def __init__(self) -> None:
+        self.results: list[SearchResult] = []
+        self.calls: list[dict] = []
+        self.raise_error = False
+
+    async def search(self, user_id, query, project_id=None, top_k=5) -> list[SearchResult]:
+        self.calls.append(
+            {"user_id": user_id, "query": query, "project_id": project_id, "top_k": top_k}
+        )
+        if self.raise_error:
+            raise RuntimeError("knowledge search backend unavailable")
+        return self.results
+
+
 class FakeOllamaProvider:
     model = "fake-model"
     provider_name = "ollama"
@@ -221,9 +237,15 @@ def memory_repository():
 
 
 @pytest.fixture
-def client(repository, memory_repository):
+def knowledge_repository():
+    return FakeKnowledgeRepository()
+
+
+@pytest.fixture
+def client(repository, memory_repository, knowledge_repository):
     app.dependency_overrides[get_chat_repository] = lambda: repository
     app.dependency_overrides[get_memory_repository] = lambda: memory_repository
+    app.dependency_overrides[get_knowledge_repository] = lambda: knowledge_repository
     app.dependency_overrides[get_model_provider] = lambda: FakeOllamaProvider()
     yield TestClient(app)
     app.dependency_overrides.clear()
@@ -538,3 +560,81 @@ async def test_summary_generation_failure_does_not_break_chat_turn(client, repos
     assert done["provider"] == "ollama"
     assert conv_id not in repository.summaries
     assert repository.audit[-1]["success"] is True
+
+
+async def test_chat_injects_evidence_when_project_documents_match(client, knowledge_repository):
+    knowledge_repository.results = [
+        SearchResult(
+            document_id="doc-1",
+            document_title="Kubernetes Notes",
+            chunk_id="chunk-1",
+            content="x" * 250,
+            page=3,
+            section=None,
+            score=0.87,
+        )
+    ]
+    provider = FakeOllamaProvider()
+    app.dependency_overrides[get_model_provider] = lambda: provider
+
+    response = client.post(
+        "/api/v1/chat",
+        json={"conversation_id": None, "message": "what did I write?", "project_id": "proj-a"},
+    )
+
+    assert response.status_code == 200
+    assert knowledge_repository.calls == [
+        {
+            "user_id": "user-1",
+            "query": "what did I write?",
+            "project_id": "proj-a",
+            "top_k": 5,
+        }
+    ]
+
+    assert provider.last_request is not None
+    system_message = provider.last_request.messages[0]
+    assert system_message["role"] == "system"
+    assert system_message["content"].startswith("Relevant documents:\n1) Kubernetes Notes (p.3): ")
+    assert "x" * 200 in system_message["content"]
+    assert "x" * 201 not in system_message["content"]  # snippet truncated to 200 chars
+
+    done = _done_event(response.text)
+    assert done["evidence"] == [
+        {
+            "document_id": "doc-1",
+            "document_title": "Kubernetes Notes",
+            "chunk_id": "chunk-1",
+            "page": 3,
+            "score": 0.87,
+        }
+    ]
+
+
+def test_chat_without_project_id_has_empty_evidence_and_skips_search(client, knowledge_repository):
+    response = client.post("/api/v1/chat", json={"conversation_id": None, "message": "hi"})
+
+    assert _done_event(response.text)["evidence"] == []
+    assert knowledge_repository.calls == []
+
+
+def test_chat_evidence_search_failure_does_not_break_chat_turn(client, knowledge_repository):
+    knowledge_repository.raise_error = True
+
+    response = client.post(
+        "/api/v1/chat",
+        json={"conversation_id": None, "message": "hi", "project_id": "proj-a"},
+    )
+
+    assert response.status_code == 200
+    done = _done_event(response.text)
+    assert done["provider"] == "ollama"
+    assert done["evidence"] == []
+
+
+def test_command_turns_have_empty_evidence_field(client):
+    response = client.post(
+        "/api/v1/chat", json={"conversation_id": None, "message": "/remember buy milk"}
+    )
+
+    assert _done_event(response.text)["evidence"] == []
