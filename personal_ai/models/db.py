@@ -187,6 +187,40 @@ class Approval(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
+class Workspace(Base):
+    """Sandboxed development workspace (SPEC.md §9)."""
+
+    __tablename__ = "workspaces"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    source_path: Mapped[str] = mapped_column()
+    workspace_dir: Mapped[str] = mapped_column()
+    status: Mapped[str] = mapped_column(default="active", server_default="active")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class WorkspaceRun(Base):
+    """A single command execution inside a Workspace (SPEC.md §9).
+
+    No workspace_artifacts table yet — artifacts stay as files in the
+    workspace directory until a later phase needs them queryable from the
+    DB.
+    """
+
+    __tablename__ = "workspace_runs"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"))
+    command: Mapped[list] = mapped_column(JSONB)
+    exit_code: Mapped[int | None] = mapped_column(default=None)
+    stdout: Mapped[str] = mapped_column()
+    stderr: Mapped[str] = mapped_column()
+    duration_ms: Mapped[int] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
 class AuditEvent(Base):
     """Append-only audit log (SPEC.md §20.4).
 

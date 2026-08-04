@@ -6,6 +6,7 @@ import { KnowledgePanel } from "./knowledge-panel";
 import { MemoryPanel } from "./memory-panel";
 import { SkillsPanel } from "./skills-panel";
 import { TasksPanel } from "./tasks-panel";
+import { WorkspacesPanel } from "./workspaces-panel";
 
 type Project = {
   id: string;
@@ -198,6 +199,7 @@ export function Sidebar({
       <KnowledgePanel activeProjectId={activeProjectId} />
       <SkillsPanel activeProjectId={activeProjectId} />
       <TasksPanel activeProjectId={activeProjectId} />
+      <WorkspacesPanel />
       <ApprovalsPanel />
     </aside>
   );

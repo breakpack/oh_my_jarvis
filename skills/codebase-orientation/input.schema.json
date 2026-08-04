@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "codebase-orientation input",
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string",
+      "description": "오리엔테이션할 Git 저장소의 절대 경로. ALLOWED_REPOS에 명시된 저장소만 허용된다."
+    }
+  },
+  "required": ["source"],
+  "additionalProperties": false
+}

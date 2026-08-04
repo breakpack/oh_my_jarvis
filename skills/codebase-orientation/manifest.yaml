@@ -1,0 +1,42 @@
+api_version: personal-ai-os/v1
+kind: Skill
+metadata:
+  name: codebase-orientation
+  display_name: Codebase Orientation
+  version: 0.1.0
+  description: 지정한 저장소를 격리된 워크스페이스에서 훑어보고 구조 요약(주요 디렉터리, README 발췌)을 반환한다.
+  license: MIT
+  author: local
+  tags:
+    - development
+    - codebase
+    - orientation
+runtime:
+  type: python
+  entrypoint: workflow.py
+  timeout_seconds: 60
+  network_access: none
+models:
+  preferred: []
+  local_only_supported: true
+capabilities:
+  tools:
+    - development.create_workspace
+    - development.search
+    - development.read_file
+    - development.destroy_workspace
+  resources: []
+permissions:
+  risk_level: read
+  scopes:
+    - workspace.read
+input_schema: input.schema.json
+output_schema: output.schema.json
+verification:
+  required: true
+  checks:
+    - workspace_destroyed
+    - summary_present
+rollback:
+  supported: false
+  strategy: not_applicable_read_only

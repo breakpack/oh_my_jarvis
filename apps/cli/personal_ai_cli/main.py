@@ -1042,5 +1042,135 @@ def task_update(
     )
 
 
+WORKSPACES_ENDPOINT = "/api/v1/workspaces"
+
+
+def create_workspace(client: httpx.Client, base_url: str, source: str) -> dict[str, Any]:
+    return _request_json(
+        client, "POST", _api_url(base_url, WORKSPACES_ENDPOINT), json={"source": source}
+    )
+
+
+def run_workspace_command(
+    client: httpx.Client, base_url: str, workspace_id: str, command: list[str]
+) -> dict[str, Any]:
+    return _request_json(
+        client,
+        "POST",
+        _api_url(base_url, f"{WORKSPACES_ENDPOINT}/{workspace_id}/run"),
+        json={"command": command},
+    )
+
+
+def fetch_workspace_diff(client: httpx.Client, base_url: str, workspace_id: str) -> dict[str, Any]:
+    return _request_json(
+        client, "GET", _api_url(base_url, f"{WORKSPACES_ENDPOINT}/{workspace_id}/diff")
+    )
+
+
+def commit_workspace(client: httpx.Client, base_url: str, workspace_id: str, message: str) -> Any:
+    return _request_json(
+        client,
+        "POST",
+        _api_url(base_url, f"{WORKSPACES_ENDPOINT}/{workspace_id}/commit"),
+        json={"message": message},
+    )
+
+
+def destroy_workspace(client: httpx.Client, base_url: str, workspace_id: str) -> None:
+    _request_json(client, "DELETE", _api_url(base_url, f"{WORKSPACES_ENDPOINT}/{workspace_id}"))
+
+
+def render_workspace_run_result(result: dict[str, Any]) -> None:
+    exit_code = result.get("exit_code")
+    duration_ms = result.get("duration_ms")
+    color = "green" if exit_code == 0 else "red"
+    console.print(f"[{color}]exit_code={exit_code}[/{color}] duration_ms={duration_ms}")
+    stdout = result.get("stdout") or ""
+    stderr = result.get("stderr") or ""
+    if stdout:
+        console.print("[dim]stdout:[/dim]")
+        console.print(stdout, markup=False, highlight=False)
+    if stderr:
+        console.print("[dim]stderr:[/dim]")
+        err_console.print(stderr, markup=False, highlight=False)
+
+
+workspace_app = typer.Typer(help="Create and manage sandboxed git workspaces")
+app.add_typer(workspace_app, name="workspace")
+
+
+@workspace_app.command("create")
+def workspace_create(source: str) -> None:
+    """Create a sandboxed workspace from a repository source."""
+    settings = Settings()
+    with httpx.Client(timeout=60.0) as client:
+        workspace = _run_api_call(lambda: create_workspace(client, settings.api_base_url, source))
+    workspace = workspace or {}
+    console.print(str(workspace.get("id", "")))
+
+
+@workspace_app.command("run", context_settings={"ignore_unknown_options": True})
+def workspace_run(
+    workspace_id: str,
+    command: list[str] = typer.Argument(
+        ..., help="Command and arguments to run inside the workspace"
+    ),
+) -> None:
+    """Run a command inside a workspace and print its result."""
+    settings = Settings()
+    with httpx.Client(timeout=120.0) as client:
+        result = _run_api_call(
+            lambda: run_workspace_command(client, settings.api_base_url, workspace_id, command)
+        )
+    result = result or {}
+    render_workspace_run_result(result)
+    if result.get("exit_code", 0) != 0:
+        raise typer.Exit(code=1)
+
+
+@workspace_app.command("diff")
+def workspace_diff(workspace_id: str) -> None:
+    """Show the current diff in a workspace."""
+    settings = Settings()
+    with httpx.Client(timeout=30.0) as client:
+        result = _run_api_call(
+            lambda: fetch_workspace_diff(client, settings.api_base_url, workspace_id)
+        )
+    diff = (result or {}).get("diff", "")
+    if diff:
+        console.print(diff, markup=False, highlight=False)
+    else:
+        console.print("[dim](no changes)[/dim]")
+
+
+@workspace_app.command("commit")
+def workspace_commit(workspace_id: str, message: str) -> None:
+    """Request a commit in a workspace (requires approval)."""
+    settings = Settings()
+    with httpx.Client(timeout=30.0) as client:
+        result = _run_api_call(
+            lambda: commit_workspace(client, settings.api_base_url, workspace_id, message)
+        )
+    result = result or {}
+    if result.get("status") == "pending_approval":
+        approval_id = result.get("approval_id", "")
+        console.print(
+            f"[yellow]승인 대기 중[/yellow] (approval id: {approval_id})  "
+            f"'pai approval approve {approval_id}'로 승인하세요"
+        )
+        return
+    console.print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+@workspace_app.command("destroy")
+def workspace_destroy(workspace_id: str) -> None:
+    """Destroy a workspace."""
+    settings = Settings()
+    with httpx.Client(timeout=30.0) as client:
+        _run_api_call(lambda: destroy_workspace(client, settings.api_base_url, workspace_id))
+    console.print(f"[yellow]destroyed:[/yellow] {workspace_id}")
+
+
 if __name__ == "__main__":
     app()

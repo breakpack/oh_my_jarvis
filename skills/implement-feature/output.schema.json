@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "implement-feature output",
+  "type": "object",
+  "properties": {
+    "success": { "type": "boolean" },
+    "summary": { "type": "string" },
+    "data": {
+      "type": ["object", "null"],
+      "properties": {
+        "workspace_id": { "type": "string" },
+        "diff": { "type": "string" },
+        "patch_result": {
+          "type": "object",
+          "properties": {
+            "success": { "type": "boolean" },
+            "stderr": { "type": "string" }
+          }
+        },
+        "test_result": {
+          "type": ["object", "null"],
+          "properties": {
+            "exit_code": { "type": "integer" },
+            "stdout": { "type": "string" },
+            "stderr": { "type": "string" },
+            "duration_ms": { "type": "integer" }
+          }
+        }
+      }
+    },
+    "rollback_token": { "type": ["string", "null"] },
+    "error": { "type": ["string", "null"] }
+  },
+  "required": ["success", "summary"]
+}

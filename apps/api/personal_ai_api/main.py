@@ -12,6 +12,7 @@ from personal_ai_api.projects import router as projects_router
 from personal_ai_api.skills import router as skills_router
 from personal_ai_api.tasks import router as tasks_router
 from personal_ai_api.telemetry import setup_telemetry
+from personal_ai_api.workspaces import router as workspaces_router
 
 app = FastAPI(title="Personal AI OS - Assistant API", version=__version__)
 
@@ -31,6 +32,7 @@ app.include_router(documents_router)
 app.include_router(knowledge_router)
 app.include_router(skills_router)
 app.include_router(tasks_router)
+app.include_router(workspaces_router)
 app.include_router(approvals_router)
 
 

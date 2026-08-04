@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "implement-feature input",
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string",
+      "description": "패치를 적용할 Git 저장소의 절대 경로. ALLOWED_REPOS에 명시된 저장소만 허용된다."
+    },
+    "patch": {
+      "type": "string",
+      "description": "적용할 unified diff 텍스트."
+    },
+    "test_command": {
+      "type": ["array", "null"],
+      "items": { "type": "string" },
+      "description": "패치 적용 후 실행할 명령(선택). 첫 원소는 allowlist에 포함되어야 한다: pytest, ruff, mypy, python3, uv, npm, git, ls, cat."
+    }
+  },
+  "required": ["source", "patch"],
+  "additionalProperties": false
+}

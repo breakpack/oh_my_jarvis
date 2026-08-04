@@ -1,16 +1,24 @@
 """Approvals API (SPEC.md §12 Policy/Approval, §20.4 Audit).
 
-The one action shape this phase produces approvals for is a gated skill run
-(action="skill:<name>", created by skills.py when the skill's manifest risk
-level requires approval). Approving replays that skill's plan/execute/verify
-sequence for real; rejecting just flips its status.
+Two action shapes reach this phase's approve endpoint:
+- A gated skill run (action="skill:<name>", created by skills.py when the
+  skill's manifest risk level requires approval). Approving replays that
+  skill's plan/execute/verify sequence for real.
+- A workspace commit (action="workspace_commit:<workspace_id>", created by
+  workspaces.py -- SPEC §25 DoD "승인 전 commit 금지"). Approving runs the
+  actual `git add -A` + `git commit -m <message>` in that workspace's
+  repository directory; GitWorktreeRuntime deliberately has no commit
+  method of its own, so this is the only place a commit happens.
+Rejecting either just flips their status, unchanged.
 """
 
 from __future__ import annotations
 
+import subprocess
 import time
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
@@ -24,10 +32,17 @@ from personal_ai_api.approvals_repository import (
     get_approvals_repository,
 )
 from personal_ai_api.skills_service import SkillNotFound, find_skill_class, get_skill
+from personal_ai_api.workspaces import COMMIT_ACTION_PREFIX
+from personal_ai_api.workspaces_repository import (
+    WorkspaceRecordNotFound,
+    WorkspacesRepository,
+    get_workspaces_repository,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["approvals"])
 
 SKILL_ACTION_PREFIX = "skill:"
+_COMMIT_SUBPROCESS_TIMEOUT_SECONDS = 15
 
 
 class ApprovalOut(BaseModel):
@@ -86,6 +101,61 @@ async def _execute_skill_for_approval(
         return SkillResult(success=False, summary="skill execution failed", error=str(exc))
 
 
+async def _commit_workspace_for_approval(
+    workspace_id: str,
+    arguments: dict,
+    user_id: str,
+    workspaces_repository: WorkspacesRepository,
+) -> SkillResult:
+    message = arguments.get("message", "")
+    try:
+        workspace = await workspaces_repository.get_workspace(workspace_id, user_id)
+    except WorkspaceRecordNotFound:
+        return SkillResult(
+            success=False,
+            summary="workspace not found",
+            error=f"workspace '{workspace_id}' not found",
+        )
+
+    repository_dir = Path(workspace.workspace_dir) / "repository"
+
+    # SPEC-mandated order: `git add -A` then `git commit -m <message>`,
+    # each its own subprocess.run call (shell=False, argument list only).
+    add_result = subprocess.run(
+        ["git", "add", "-A"],
+        cwd=repository_dir,
+        shell=False,
+        capture_output=True,
+        text=True,
+        timeout=_COMMIT_SUBPROCESS_TIMEOUT_SECONDS,
+    )
+    if add_result.returncode != 0:
+        return SkillResult(
+            success=False,
+            summary="git add failed",
+            error=add_result.stderr.strip() or "git add failed",
+        )
+
+    commit_result = subprocess.run(
+        ["git", "commit", "-m", message],
+        cwd=repository_dir,
+        shell=False,
+        capture_output=True,
+        text=True,
+        timeout=_COMMIT_SUBPROCESS_TIMEOUT_SECONDS,
+    )
+    if commit_result.returncode != 0:
+        return SkillResult(
+            success=False,
+            summary="git commit failed",
+            error=commit_result.stderr.strip()
+            or commit_result.stdout.strip()
+            or "git commit failed",
+        )
+
+    return SkillResult(success=True, summary=f"Committed to workspace {workspace_id}: {message}")
+
+
 @router.get("/approvals")
 async def list_approvals_endpoint(
     status: str | None = "pending",
@@ -100,6 +170,7 @@ async def list_approvals_endpoint(
 async def approve_approval_endpoint(
     approval_id: str,
     repository: ApprovalsRepository = Depends(get_approvals_repository),
+    workspaces_repository: WorkspacesRepository = Depends(get_workspaces_repository),
 ) -> dict:
     user_id = await repository.get_or_create_default_user()
     try:
@@ -123,12 +194,17 @@ async def approve_approval_endpoint(
             status_code=409, detail="arguments hash mismatch — approval invalidated"
         )
 
-    if not approval.action.startswith(SKILL_ACTION_PREFIX):
-        raise HTTPException(status_code=400, detail="unsupported approval action")
-    skill_name = approval.action[len(SKILL_ACTION_PREFIX) :]
-
     started = time.monotonic()
-    result = await _execute_skill_for_approval(skill_name, approval.arguments, user_id)
+    if approval.action.startswith(SKILL_ACTION_PREFIX):
+        skill_name = approval.action[len(SKILL_ACTION_PREFIX) :]
+        result = await _execute_skill_for_approval(skill_name, approval.arguments, user_id)
+    elif approval.action.startswith(COMMIT_ACTION_PREFIX):
+        workspace_id = approval.action[len(COMMIT_ACTION_PREFIX) :]
+        result = await _commit_workspace_for_approval(
+            workspace_id, approval.arguments, user_id, workspaces_repository
+        )
+    else:
+        raise HTTPException(status_code=400, detail="unsupported approval action")
 
     await repository.update_approval(
         approval_id, user_id, {"status": "approved", "rollback_token": result.rollback_token}

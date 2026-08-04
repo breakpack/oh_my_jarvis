@@ -1,13 +1,19 @@
 """Integration tests for the Approvals API (SPEC.md §12 Policy/Approval,
 §20.4 Audit). No real DB: the approvals repository dependency is swapped
-for an in-memory fake. Approving replays the real github-issue-create
-skill's plan/execute/verify -- execute() itself is monkeypatched so no real
-`gh` call happens, matching how test_skills.py avoids real Tool calls.
+for an in-memory fake. Approving a skill: action replays the real
+github-issue-create skill's plan/execute/verify -- execute() itself is
+monkeypatched so no real `gh` call happens, matching how test_skills.py
+avoids real Tool calls. Approving a workspace_commit: action runs real
+`git add`/`git commit` against a scratch tmp_path repo (no mocking needed
+for plain `git`), which is the actual, strongest verification of the
+"add-then-commit, in order" requirement.
 """
 
 from __future__ import annotations
 
+import subprocess
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -17,6 +23,11 @@ from personal_ai_api.approvals_repository import (
     get_approvals_repository,
 )
 from personal_ai_api.main import app
+from personal_ai_api.workspaces_repository import (
+    WorkspaceRecord,
+    WorkspaceRecordNotFound,
+    get_workspaces_repository,
+)
 
 from personal_ai.security.approval import compute_arguments_hash
 
@@ -89,6 +100,42 @@ class FakeApprovalsRepository:
         self.audit_events.append({"user_id": user_id, "event_type": event_type, "payload": payload})
 
 
+class FakeWorkspacesRepository:
+    def __init__(self) -> None:
+        self.workspaces: dict[str, WorkspaceRecord] = {}
+
+    async def get_or_create_default_user(self) -> str:
+        return "user-1"
+
+    async def get_workspace(self, workspace_id, user_id) -> WorkspaceRecord:
+        if workspace_id not in self.workspaces:
+            raise WorkspaceRecordNotFound(workspace_id)
+        return self.workspaces[workspace_id]
+
+    async def create_workspace(self, user_id, workspace_id, source_path, workspace_dir):
+        raise NotImplementedError("not needed by approvals.py")
+
+    async def update_workspace(self, workspace_id, user_id, updates):
+        raise NotImplementedError("not needed by approvals.py")
+
+    async def record_run(self, *args, **kwargs):
+        raise NotImplementedError("not needed by approvals.py")
+
+
+def _init_git_repo(base_dir: Path) -> Path:
+    """A real (scratch) git repo -- plain `git` needs no mocking, and
+    actually running it is the strongest proof of "add ran before commit"."""
+    repository_dir = base_dir / "repository"
+    repository_dir.mkdir(parents=True)
+    subprocess.run(["git", "init"], cwd=repository_dir, capture_output=True, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=repository_dir, check=True
+    )
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repository_dir, check=True)
+    (repository_dir / "README.md").write_text("hello\n", encoding="utf-8")
+    return repository_dir
+
+
 def _seed(repository: FakeApprovalsRepository, **overrides) -> ApprovalRecord:
     arguments = overrides.pop("arguments", {"repo": "acme/widgets", "title": "Bug report"})
     defaults = dict(
@@ -121,8 +168,14 @@ def repository() -> FakeApprovalsRepository:
 
 
 @pytest.fixture
-def client(repository: FakeApprovalsRepository):
+def workspaces_repository() -> FakeWorkspacesRepository:
+    return FakeWorkspacesRepository()
+
+
+@pytest.fixture
+def client(repository: FakeApprovalsRepository, workspaces_repository: FakeWorkspacesRepository):
     app.dependency_overrides[get_approvals_repository] = lambda: repository
+    app.dependency_overrides[get_workspaces_repository] = lambda: workspaces_repository
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -234,6 +287,94 @@ def test_approve_executes_the_skill_and_marks_approved(
     )
     assert execute_event["payload"]["approval_id"] == approval.id
     assert execute_event["payload"]["success"] is True
+
+
+def test_approve_workspace_commit_runs_git_add_then_commit_in_order(
+    client: TestClient, repository, workspaces_repository, tmp_path
+) -> None:
+    repository_dir = _init_git_repo(tmp_path)
+    workspaces_repository.workspaces["ws-1"] = WorkspaceRecord(
+        id="ws-1",
+        source_path="/repos/acme",
+        workspace_dir=str(tmp_path),
+        status="active",
+        created_at="2026-01-01T00:00:00",
+        updated_at="2026-01-01T00:00:00",
+    )
+    arguments = {"workspace_id": "ws-1", "message": "Add README"}
+    approval = _seed(
+        repository,
+        action="workspace_commit:ws-1",
+        target="ws-1",
+        arguments=arguments,
+        preview="git commit -m 'Add README' in workspace ws-1",
+        expected_effects=["Creates a local git commit in the workspace worktree"],
+        rollback_available=False,
+    )
+
+    response = client.post(f"/api/v1/approvals/{approval.id}/approve")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+
+    # README.md was untracked before approval -- if `git commit` had run
+    # before `git add`, this commit would have failed with nothing staged.
+    log = subprocess.run(
+        ["git", "log", "-1", "--format=%s"], cwd=repository_dir, capture_output=True, text=True
+    )
+    assert log.stdout.strip() == "Add README"
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=repository_dir, capture_output=True, text=True
+    )
+    assert status.stdout.strip() == ""
+
+    assert repository.approvals[approval.id].status == "approved"
+
+
+def test_approve_workspace_commit_with_nothing_to_commit_returns_failure_reason(
+    client: TestClient, repository, workspaces_repository, tmp_path
+) -> None:
+    repository_dir = _init_git_repo(tmp_path)
+    subprocess.run(["git", "add", "-A"], cwd=repository_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repository_dir, check=True)
+
+    workspaces_repository.workspaces["ws-1"] = WorkspaceRecord(
+        id="ws-1",
+        source_path="/repos/acme",
+        workspace_dir=str(tmp_path),
+        status="active",
+        created_at="2026-01-01T00:00:00",
+        updated_at="2026-01-01T00:00:00",
+    )
+    arguments = {"workspace_id": "ws-1", "message": "Nothing to commit"}
+    approval = _seed(repository, action="workspace_commit:ws-1", target="ws-1", arguments=arguments)
+
+    response = client.post(f"/api/v1/approvals/{approval.id}/approve")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is False
+    assert body["error"]
+    # The approval was still processed (consistent with the skill: branch,
+    # which also marks approved regardless of the underlying result).
+    assert repository.approvals[approval.id].status == "approved"
+
+
+def test_approve_workspace_commit_unknown_workspace_returns_failure_reason(
+    client: TestClient, repository
+) -> None:
+    arguments = {"workspace_id": "missing-ws", "message": "x"}
+    approval = _seed(
+        repository, action="workspace_commit:missing-ws", target="missing-ws", arguments=arguments
+    )
+
+    response = client.post(f"/api/v1/approvals/{approval.id}/approve")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is False
+    assert "not found" in body["error"]
 
 
 def test_approve_unsupported_action_returns_400(client: TestClient, repository) -> None:

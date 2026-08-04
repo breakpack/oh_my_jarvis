@@ -4,8 +4,8 @@
 
 ## 현재 상태
 
-- **Phase 0 ~ Phase 5: 완료** (`feat/phase-0` ~ `feat/phase-5` 브랜치)
-- **Phase 6 ~ Phase 10: 계획됨** — 각 Phase는 동일한 방식(오케스트레이션 병렬 개발 + `feat/phase-N` 브랜치)으로 이어서 진행한다.
+- **Phase 0 ~ Phase 6: 완료** (`feat/phase-0` ~ `feat/phase-6` 브랜치)
+- **Phase 7 ~ Phase 10: 계획됨** — 각 Phase는 동일한 방식(오케스트레이션 병렬 개발 + `feat/phase-N` 브랜치)으로 이어서 진행한다.
 
 ## Phase 목록
 
@@ -17,7 +17,7 @@
 | 3 | Second Brain RAG | Native parser(pypdf, Docling은 교체 가능한 어댑터로 계획만), Chunking, Local embedding(bge-m3), Hybrid retrieval, Evidence UI, Knowledge CLI | 완료 |
 | 4 | Skill SDK and Read-only Tools | Skill manifest, SKILL.md loader, Schema validation, Skill Registry/Resolver, MCP Adapter(실제 stdio 연동), github-issues-lookup/local-file-search Skill, calendar/notion Stub, Skill CLI | 완료 |
 | 5 | Approval and Mutation | Policy Engine, Approval Manager(Argument hash 검증), Task CRUD(LOW_WRITE 자동), GitHub Issue 생성(MEDIUM, 승인+Rollback), Calendar/Notion/Email은 Phase4 Stub 유지 | 완료 |
-| 6 | Development Agent | Workspace, Sandbox, Repository scan, Code search, Patch, Formatter/Linter/Test, Diff, OpenHands Adapter 평가 | 계획됨 |
+| 6 | Development Agent | Workspace(git worktree Sandbox), Repository search/read, Patch, 명령 allowlist 기반 Test 실행, Diff, 승인 게이트된 Commit, Workspace escape 테스트. OpenHands Adapter 평가는 보류(문서화 예정) | 완료 |
 | 7 | Browser Agent | Playwright Tool, Browser Use Adapter, Browser approval, Prompt injection guard | 계획됨 |
 | 8 | Durable Workflow | LangGraph, PostgreSQL Checkpoint, Interrupt, Retry, Resume, Cancellation | 계획됨 |
 | 9 | Proactive Assistant | Event sources, Scheduler, Deduplication, Quiet hours, Notification preferences | 계획됨 |

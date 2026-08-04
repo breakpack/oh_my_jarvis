@@ -1,0 +1,42 @@
+api_version: personal-ai-os/v1
+kind: Skill
+metadata:
+  name: implement-feature
+  display_name: Implement Feature
+  version: 0.1.0
+  description: 격리된 워크스페이스에서 패치를 적용하고(선택적으로 테스트까지 실행) diff와 테스트 결과를 반환한다. 커밋은 하지 않는다 — 승인 이후 별도 단계에서 처리된다.
+  license: MIT
+  author: local
+  tags:
+    - development
+    - implement-feature
+    - patch
+runtime:
+  type: python
+  entrypoint: workflow.py
+  timeout_seconds: 180
+  network_access: none
+models:
+  preferred: []
+  local_only_supported: true
+capabilities:
+  tools:
+    - development.create_workspace
+    - development.apply_patch
+    - development.run_command
+    - development.get_diff
+  resources: []
+permissions:
+  risk_level: medium
+  scopes:
+    - workspace.write
+input_schema: input.schema.json
+output_schema: output.schema.json
+verification:
+  required: true
+  checks:
+    - patch_result_present
+    - no_commit_performed
+rollback:
+  supported: true
+  strategy: destroy_workspace
