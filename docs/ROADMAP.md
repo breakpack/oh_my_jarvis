@@ -4,8 +4,8 @@
 
 ## 현재 상태
 
-- **Phase 0 / Phase 1: 완료** (`feat/phase-0`, `feat/phase-1` 브랜치)
-- **Phase 2 ~ Phase 10: 계획됨** — 각 Phase는 이후 세션에서 동일한 방식(오케스트레이션 병렬 개발 + `feat/phase-N` 브랜치)으로 진행한다.
+- **Phase 0 ~ Phase 2: 완료** (`feat/phase-0`, `feat/phase-1`, `feat/phase-2` 브랜치)
+- **Phase 3 ~ Phase 10: 계획됨** — 각 Phase는 동일한 방식(오케스트레이션 병렬 개발 + `feat/phase-N` 브랜치)으로 이어서 진행한다.
 
 ## Phase 목록
 
@@ -13,7 +13,7 @@
 |---|---|---|---|
 | 0 | Repository Bootstrap | Monorepo, FastAPI, Next.js, CLI, PostgreSQL+pgvector, Redis, Alembic, OpenTelemetry 기본, Makefile, CI, AGENTS.md | 완료 |
 | 1 | Local Chat Vertical Slice | Conversation/Message, Ollama Provider, SSE Streaming, Chat UI, CLI Chat, Local/Cloud 수동 선택, 기본 Audit | 완료 |
-| 2 | Project and Memory | Project CRUD, Active Project, Memory CRUD, Conversation Summary, Explicit remember/forget, Memory policy | 계획됨 |
+| 2 | Project and Memory | Project CRUD, Active Project, Memory CRUD, Conversation Summary, Explicit remember/forget, Memory policy | 완료 |
 | 3 | Second Brain RAG | Docling ingestion, Native parser, Chunking, Local embedding, Hybrid retrieval, Evidence UI, Knowledge CLI | 계획됨 |
 | 4 | Skill SDK and Read-only Tools | Skill manifest, SKILL.md loader, Schema validation, Skill Registry/Resolver, MCP Adapter, Read-only Skill, Skill CLI | 계획됨 |
 | 5 | Approval and Mutation | Policy Engine, Approval Manager, Pause/Resume, Calendar/Task/Notion/GitHub/Email 쓰기, Rollback | 계획됨 |

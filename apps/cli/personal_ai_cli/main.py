@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -212,11 +212,14 @@ def stream_chat_response(
     conversation_id: str | None,
     message: str,
     local_only: bool | None,
+    project_id: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """POST to the chat endpoint, print tokens as they arrive, return (full text, done payload)."""
     payload: dict[str, Any] = {"conversation_id": conversation_id, "message": message}
     if local_only is not None:
         payload["local_only"] = local_only
+    if project_id is not None:
+        payload["project_id"] = project_id
 
     chunks: list[str] = []
     done_payload: dict[str, Any] = {}
@@ -262,6 +265,7 @@ def ask(
     cloud: bool = typer.Option(
         False, "--cloud", help="Request cloud processing (not available in this phase)"
     ),
+    project: str | None = typer.Option(None, "--project", help="Scope the request to a project"),
 ) -> None:
     """Ask a one-off question and stream the reply."""
     _validate_local_cloud(local, cloud)
@@ -270,7 +274,7 @@ def ask(
     try:
         with httpx.Client(timeout=httpx.Timeout(10.0, read=120.0)) as client:
             _, done = stream_chat_response(
-                client, settings.api_base_url, conversation_id, prompt, local_only
+                client, settings.api_base_url, conversation_id, prompt, local_only, project
             )
     except ChatError as e:
         err_console.print(f"error: {e}")
@@ -293,6 +297,7 @@ def chat(
     cloud: bool = typer.Option(
         False, "--cloud", help="Request cloud processing (not available in this phase)"
     ),
+    project: str | None = typer.Option(None, "--project", help="Scope the session to a project"),
 ) -> None:
     """Interactive chat REPL. Type /exit or press Ctrl+D to quit."""
     _validate_local_cloud(local, cloud)
@@ -315,7 +320,12 @@ def chat(
 
             try:
                 _, done = stream_chat_response(
-                    client, settings.api_base_url, active_conversation_id, message, local_only
+                    client,
+                    settings.api_base_url,
+                    active_conversation_id,
+                    message,
+                    local_only,
+                    project,
                 )
             except ChatError as e:
                 err_console.print(f"error: {e}")
@@ -328,6 +338,174 @@ def chat(
             model = done.get("model")
             if model:
                 console.print(f"[dim]({model})[/dim]")
+
+
+class ApiError(RuntimeError):
+    """Raised when a REST call to the API backend fails."""
+
+
+def _api_url(base_url: str, path: str) -> str:
+    return f"{base_url.rstrip('/')}{path}"
+
+
+def _request_json(client: httpx.Client, method: str, url: str, **kwargs: Any) -> Any:
+    response = client.request(method, url, **kwargs)
+    if response.status_code >= 400:
+        raise ApiError(_extract_error_message(response))
+    if not response.content:
+        return None
+    return response.json()
+
+
+def _run_api_call(action: Callable[[], Any]) -> Any:
+    try:
+        return action()
+    except ApiError as e:
+        err_console.print(f"error: {e}")
+        raise typer.Exit(code=1) from e
+    except httpx.HTTPError as e:
+        err_console.print(f"connection failed: {e}")
+        raise typer.Exit(code=1) from e
+
+
+def fetch_projects(client: httpx.Client, base_url: str) -> list[dict[str, Any]]:
+    return _request_json(client, "GET", _api_url(base_url, "/api/v1/projects"))
+
+
+def create_project(
+    client: httpx.Client, base_url: str, name: str, description: str | None
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"name": name}
+    if description is not None:
+        payload["description"] = description
+    return _request_json(client, "POST", _api_url(base_url, "/api/v1/projects"), json=payload)
+
+
+def search_memories(
+    client: httpx.Client, base_url: str, query: str, project_id: str | None
+) -> list[dict[str, Any]]:
+    payload: dict[str, Any] = {"query": query}
+    if project_id is not None:
+        payload["project_id"] = project_id
+    return _request_json(
+        client, "POST", _api_url(base_url, "/api/v1/memories/search"), json=payload
+    )
+
+
+def list_memories(
+    client: httpx.Client, base_url: str, project_id: str | None
+) -> list[dict[str, Any]]:
+    params: dict[str, Any] = {}
+    if project_id is not None:
+        params["project_id"] = project_id
+    return _request_json(client, "GET", _api_url(base_url, "/api/v1/memories"), params=params)
+
+
+def forget_memory(client: httpx.Client, base_url: str, memory_id: str) -> None:
+    _request_json(client, "DELETE", _api_url(base_url, f"/api/v1/memories/{memory_id}"))
+
+
+def build_projects_table(projects: list[dict[str, Any]]) -> Table:
+    table = Table(title="Projects")
+    table.add_column("ID")
+    table.add_column("Name")
+    table.add_column("Status")
+    table.add_column("Created")
+    for project in projects:
+        table.add_row(
+            str(project.get("id", "")),
+            str(project.get("name", "")),
+            str(project.get("status", "")),
+            str(project.get("created_at", "")),
+        )
+    return table
+
+
+def _truncate(text_value: str, limit: int = 80) -> str:
+    return text_value if len(text_value) <= limit else text_value[: limit - 3] + "..."
+
+
+def build_memories_table(memories: list[dict[str, Any]]) -> Table:
+    table = Table(title="Memories")
+    table.add_column("ID")
+    table.add_column("Content")
+    table.add_column("Source")
+    table.add_column("Confidence")
+    table.add_column("Valid Until")
+    for memory in memories:
+        table.add_row(
+            str(memory.get("id", "")),
+            _truncate(str(memory.get("content", ""))),
+            str(memory.get("source", "")),
+            str(memory.get("confidence", "")),
+            str(memory.get("valid_until", "")),
+        )
+    return table
+
+
+project_app = typer.Typer(help="Manage projects")
+app.add_typer(project_app, name="project")
+
+
+@project_app.command("list")
+def project_list() -> None:
+    """List all projects."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        projects = _run_api_call(lambda: fetch_projects(client, settings.api_base_url))
+    console.print(build_projects_table(projects or []))
+
+
+@project_app.command("create")
+def project_create(
+    name: str,
+    description: str | None = typer.Option(None, "--description", help="Project description"),
+) -> None:
+    """Create a new project."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        project = _run_api_call(
+            lambda: create_project(client, settings.api_base_url, name, description)
+        )
+    console.print(str(project.get("id", "")))
+
+
+memory_app = typer.Typer(help="Search and manage memories")
+app.add_typer(memory_app, name="memory")
+
+
+@memory_app.command("search")
+def memory_search(
+    query: str,
+    project: str | None = typer.Option(None, "--project", help="Scope to a project id"),
+) -> None:
+    """Search memories."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        memories = _run_api_call(
+            lambda: search_memories(client, settings.api_base_url, query, project)
+        )
+    console.print(build_memories_table(memories or []))
+
+
+@memory_app.command("list")
+def memory_list(
+    project: str | None = typer.Option(None, "--project", help="Scope to a project id"),
+) -> None:
+    """List memories."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        memories = _run_api_call(lambda: list_memories(client, settings.api_base_url, project))
+    console.print(build_memories_table(memories or []))
+
+
+@memory_app.command("forget")
+def memory_forget(memory_id: str) -> None:
+    """Delete a memory by id."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        _run_api_call(lambda: forget_memory(client, settings.api_base_url, memory_id))
+    console.print(f"[green]forgotten:[/green] {memory_id}")
 
 
 if __name__ == "__main__":

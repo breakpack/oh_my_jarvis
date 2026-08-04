@@ -9,15 +9,11 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from personal_ai.models.db import AuditEvent, Conversation, Message, User
-from personal_ai_api.config import settings
-
-DEFAULT_USER_EMAIL = "local@personal-ai.local"
-
-engine = create_async_engine(settings.database_url, pool_pre_ping=True)
-async_session_factory = async_sessionmaker(engine, expire_on_commit=False)
+from personal_ai.models.db import AuditEvent, Conversation, ConversationSummary, Message
+from personal_ai_api.db import async_session_factory
+from personal_ai_api.db import get_or_create_default_user as _get_or_create_default_user
 
 
 @dataclass
@@ -31,6 +27,7 @@ class MessageRecord:
 @dataclass
 class ConversationRecord:
     id: str
+    project_id: str | None
     created_at: str
     updated_at: str
     preview: str | None
@@ -44,7 +41,7 @@ class ChatRepository(Protocol):
     async def get_or_create_default_user(self) -> str: ...
 
     async def get_or_create_conversation(
-        self, conversation_id: str | None, user_id: str
+        self, conversation_id: str | None, user_id: str, project_id: str | None = None
     ) -> str: ...
 
     async def get_conversation(self, conversation_id: str, user_id: str) -> ConversationRecord: ...
@@ -53,7 +50,13 @@ class ChatRepository(Protocol):
 
     async def list_messages(self, conversation_id: str) -> list[MessageRecord]: ...
 
-    async def list_conversations(self, user_id: str) -> list[ConversationRecord]: ...
+    async def list_conversations(
+        self, user_id: str, project_id: str | None = None
+    ) -> list[ConversationRecord]: ...
+
+    async def get_conversation_summary(self, conversation_id: str) -> str | None: ...
+
+    async def upsert_conversation_summary(self, conversation_id: str, summary: str) -> None: ...
 
     async def record_audit(self, user_id: str, event_type: str, payload: dict) -> None: ...
 
@@ -70,15 +73,7 @@ class SqlAlchemyChatRepository:
         self._session_factory = session_factory
 
     async def get_or_create_default_user(self) -> str:
-        async with self._session_factory() as session:
-            result = await session.execute(select(User).where(User.email == DEFAULT_USER_EMAIL))
-            user = result.scalar_one_or_none()
-            if user is None:
-                user = User(email=DEFAULT_USER_EMAIL, display_name="Local User")
-                session.add(user)
-                await session.commit()
-                await session.refresh(user)
-            return str(user.id)
+        return await _get_or_create_default_user(self._session_factory)
 
     async def get_conversation(self, conversation_id: str, user_id: str) -> ConversationRecord:
         conv_uuid = _parse_uuid(conversation_id)
@@ -91,20 +86,20 @@ class SqlAlchemyChatRepository:
             conversation = result.scalar_one_or_none()
             if conversation is None:
                 raise ConversationNotFound(conversation_id)
-            return ConversationRecord(
-                id=str(conversation.id),
-                created_at=conversation.created_at.isoformat(),
-                updated_at=conversation.updated_at.isoformat(),
-                preview=None,
-            )
+            return _to_record(conversation, preview=None)
 
-    async def get_or_create_conversation(self, conversation_id: str | None, user_id: str) -> str:
+    async def get_or_create_conversation(
+        self, conversation_id: str | None, user_id: str, project_id: str | None = None
+    ) -> str:
         if conversation_id:
             record = await self.get_conversation(conversation_id, user_id)
             return record.id
 
         async with self._session_factory() as session:
-            conversation = Conversation(user_id=_parse_uuid(user_id))
+            conversation = Conversation(
+                user_id=_parse_uuid(user_id),
+                project_id=_parse_uuid(project_id) if project_id else None,
+            )
             session.add(conversation)
             await session.commit()
             await session.refresh(conversation)
@@ -142,13 +137,15 @@ class SqlAlchemyChatRepository:
                 for m in result.scalars().all()
             ]
 
-    async def list_conversations(self, user_id: str) -> list[ConversationRecord]:
+    async def list_conversations(
+        self, user_id: str, project_id: str | None = None
+    ) -> list[ConversationRecord]:
         async with self._session_factory() as session:
-            result = await session.execute(
-                select(Conversation)
-                .where(Conversation.user_id == _parse_uuid(user_id))
-                .order_by(Conversation.updated_at.desc())
-            )
+            stmt = select(Conversation).where(Conversation.user_id == _parse_uuid(user_id))
+            if project_id:
+                stmt = stmt.where(Conversation.project_id == _parse_uuid(project_id))
+            result = await session.execute(stmt.order_by(Conversation.updated_at.desc()))
+
             records = []
             for conversation in result.scalars().all():
                 preview_result = await session.execute(
@@ -158,14 +155,31 @@ class SqlAlchemyChatRepository:
                     .limit(1)
                 )
                 records.append(
-                    ConversationRecord(
-                        id=str(conversation.id),
-                        created_at=conversation.created_at.isoformat(),
-                        updated_at=conversation.updated_at.isoformat(),
-                        preview=preview_result.scalar_one_or_none(),
-                    )
+                    _to_record(conversation, preview=preview_result.scalar_one_or_none())
                 )
             return records
+
+    async def get_conversation_summary(self, conversation_id: str) -> str | None:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(ConversationSummary.summary).where(
+                    ConversationSummary.conversation_id == _parse_uuid(conversation_id)
+                )
+            )
+            return result.scalar_one_or_none()
+
+    async def upsert_conversation_summary(self, conversation_id: str, summary: str) -> None:
+        conv_uuid = _parse_uuid(conversation_id)
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(ConversationSummary).where(ConversationSummary.conversation_id == conv_uuid)
+            )
+            existing = result.scalar_one_or_none()
+            if existing is not None:
+                existing.summary = summary
+            else:
+                session.add(ConversationSummary(conversation_id=conv_uuid, summary=summary))
+            await session.commit()
 
     async def record_audit(self, user_id: str, event_type: str, payload: dict) -> None:
         async with self._session_factory() as session:
@@ -173,6 +187,16 @@ class SqlAlchemyChatRepository:
                 AuditEvent(user_id=_parse_uuid(user_id), event_type=event_type, payload=payload)
             )
             await session.commit()
+
+
+def _to_record(conversation: Conversation, preview: str | None) -> ConversationRecord:
+    return ConversationRecord(
+        id=str(conversation.id),
+        project_id=str(conversation.project_id) if conversation.project_id else None,
+        created_at=conversation.created_at.isoformat(),
+        updated_at=conversation.updated_at.isoformat(),
+        preview=preview,
+    )
 
 
 def get_chat_repository() -> ChatRepository:

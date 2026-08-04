@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from personal_ai_api import __version__
 from personal_ai_api.chat import router as chat_router
 from personal_ai_api.config import settings
+from personal_ai_api.memory import router as memory_router
+from personal_ai_api.projects import router as projects_router
 from personal_ai_api.telemetry import setup_telemetry
 
 app = FastAPI(title="Personal AI OS - Assistant API", version=__version__)
@@ -18,6 +20,8 @@ app.add_middleware(
 
 setup_telemetry(app)
 app.include_router(chat_router)
+app.include_router(projects_router)
+app.include_router(memory_router)
 
 
 @app.get("/health")

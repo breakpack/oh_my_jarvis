@@ -84,6 +84,29 @@ class ConversationSummary(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
+class Memory(Base):
+    """User/project memory (SPEC.md §8).
+
+    No embedding column yet — Phase 3 adds it alongside the document
+    embedding pipeline. Until then, retrieval is text search (ILIKE) only.
+    """
+
+    __tablename__ = "memories"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL"), default=None
+    )
+    content: Mapped[str] = mapped_column()
+    source: Mapped[str] = mapped_column()
+    confidence: Mapped[float] = mapped_column(default=1.0, server_default="1.0")
+    valid_from: Mapped[datetime | None] = mapped_column(default=None)
+    valid_until: Mapped[datetime | None] = mapped_column(default=None)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
 class AuditEvent(Base):
     """Append-only audit log (SPEC.md §20.4).
 
