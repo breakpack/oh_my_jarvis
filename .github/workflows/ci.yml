@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python:
+    name: python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: uv sync (workspace)
+        run: uv sync --all-packages
+
+      - name: apps/api - ruff check
+        working-directory: apps/api
+        run: uv run ruff check .
+
+      - name: apps/api - ruff format check
+        working-directory: apps/api
+        run: uv run ruff format --check .
+
+      - name: apps/api - mypy
+        working-directory: apps/api
+        run: uv run mypy .
+
+      - name: apps/api - pytest
+        working-directory: apps/api
+        run: uv run pytest
+
+      - name: apps/cli - ruff check
+        working-directory: apps/cli
+        run: uv run ruff check .
+
+      - name: apps/cli - ruff format check
+        working-directory: apps/cli
+        run: uv run ruff format --check .
+
+      - name: apps/cli - mypy
+        working-directory: apps/cli
+        run: uv run mypy .
+
+      - name: apps/cli - pytest
+        working-directory: apps/cli
+        run: uv run pytest
+
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: npm install
+        working-directory: apps/web
+        run: npm install
+
+      - name: npm run lint
+        working-directory: apps/web
+        run: npm run lint
+
+      - name: npm run build
+        working-directory: apps/web
+        run: npm run build

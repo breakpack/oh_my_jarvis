@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    # POSTGRES_USER/PASSWORD/DB come from the repo-root .env (see README: `cp .env.example .env`).
+    env_file:
+      - path: ../../.env
+        required: false
+    ports:
+      # Host port 5433 to avoid colliding with other local Postgres instances/containers.
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      # Host port 6380 to avoid colliding with other local Redis instances/containers.
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # On the target Mac mini deployment, Ollama runs natively (not in Docker) so it gets
+  # Metal/GPU acceleration; the host daemon already listens on :11434 (see .env OLLAMA_BASE_URL).
+  # This containerized Ollama is only for non-macOS dev/CI environments without a native install:
+  #   docker compose -f infra/compose/docker-compose.yml --profile with-ollama up -d
+  ollama:
+    image: ollama/ollama
+    restart: unless-stopped
+    profiles: ["with-ollama"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  ollama_data:

@@ -3,8 +3,7 @@
 COMPOSE := docker compose -f infra/compose/docker-compose.yml
 
 setup:
-	uv sync --project apps/api
-	uv sync --project apps/cli
+	uv sync --all-packages
 	npm install --workspace=apps/web
 
 dev-infra:

@@ -6,7 +6,7 @@ requires-python = ">=3.11"
 dependencies = []
 
 [tool.uv.workspace]
-members = ["apps/api", "apps/cli", "packages/skill-sdk", "packages/shared-schemas"]
+members = ["apps/api", "apps/cli"]
 
 [tool.ruff]
 line-length = 100
