@@ -833,6 +833,155 @@ def skill_audit(name: str) -> None:
     console.print(build_skill_audit_table(entries or []))
 
 
+def install_skill(client: httpx.Client, base_url: str, source_path: str) -> dict[str, Any]:
+    """POST /skills/install. A blocked install is a 422 with the same
+    {"skill","audit"} shape as a 200/201 success, not a generic error — so
+    unlike _request_json, this treats 422 as a normal (non-exception)
+    response and lets the caller branch on audit.passed.
+    """
+    response = client.post(
+        _api_url(base_url, f"{SKILLS_ENDPOINT}/install"),
+        json={"source_path": source_path},
+    )
+    if response.status_code not in (200, 201, 422):
+        raise ApiError(_extract_error_message(response))
+    if not response.content:
+        return {}
+    return response.json()
+
+
+def fetch_skill_versions(client: httpx.Client, base_url: str, name: str) -> list[dict[str, Any]]:
+    return _request_json(client, "GET", _api_url(base_url, f"{SKILLS_ENDPOINT}/{name}/versions"))
+
+
+def rollback_skill(client: httpx.Client, base_url: str, name: str, version: str) -> Any:
+    return _request_json(
+        client,
+        "POST",
+        _api_url(base_url, f"{SKILLS_ENDPOINT}/{name}/rollback"),
+        json={"version": version},
+    )
+
+
+def remove_skill_store(client: httpx.Client, base_url: str, name: str) -> None:
+    _request_json(client, "DELETE", _api_url(base_url, f"{SKILLS_ENDPOINT}/{name}/store"))
+
+
+def build_audit_findings_table(findings: list[dict[str, Any]]) -> Table:
+    table = Table(title="Audit Findings")
+    table.add_column("Check")
+    table.add_column("Severity")
+    table.add_column("Message")
+    for finding in findings:
+        severity = str(finding.get("severity", ""))
+        style = {"high": "red", "critical": "red", "medium": "yellow"}.get(severity.lower())
+        severity_text = f"[{style}]{severity}[/{style}]" if style else severity
+        table.add_row(
+            str(finding.get("check", "")),
+            severity_text,
+            str(finding.get("message", "")),
+        )
+    return table
+
+
+def render_install_result(result: dict[str, Any], installed_verb: str) -> bool:
+    """Render an install/update response. Returns whether the audit passed."""
+    audit = result.get("audit") or {}
+    passed = bool(audit.get("passed"))
+    skill = result.get("skill") or {}
+
+    if passed and skill:
+        name = skill.get("name", "")
+        version = skill.get("version", "")
+        console.print(f"[green]{installed_verb}됨:[/green] {name} v{version}")
+        preview = audit.get("permissions_preview") or {}
+        risk_level = preview.get("risk_level", skill.get("risk_level", ""))
+        scopes = preview.get("scopes") or []
+        console.print(
+            f"[dim]권한:[/dim] risk_level={risk_level} "
+            f"scopes={', '.join(str(s) for s in scopes) or '(none)'}"
+        )
+        file_hash = audit.get("file_hash")
+        if file_hash:
+            console.print(f"[dim]file_hash:[/dim] {file_hash}")
+    else:
+        err_console.print(f"[red]설치가 거부됨[/red] ({installed_verb} 실패)")
+
+    findings = audit.get("findings") or []
+    if findings:
+        console.print(build_audit_findings_table(findings))
+
+    return passed
+
+
+def build_skill_versions_table(versions: list[dict[str, Any]]) -> Table:
+    table = Table(title="Skill Versions")
+    table.add_column("Version")
+    table.add_column("Created")
+    for version in versions:
+        table.add_row(str(version.get("version", "")), str(version.get("created_at", "")))
+    return table
+
+
+@skill_app.command("install")
+def skill_install(source_path: str) -> None:
+    """Install a skill from a local source path (blocked by a failing supply-chain audit)."""
+    settings = Settings()
+    with httpx.Client(timeout=60.0) as client:
+        result = _run_api_call(lambda: install_skill(client, settings.api_base_url, source_path))
+    passed = render_install_result(result or {}, "설치")
+    if not passed:
+        raise typer.Exit(code=1)
+
+
+@skill_app.command("update")
+def skill_update(name: str, source_path: str) -> None:
+    """Update a skill from a local source path (reuses the install endpoint; the
+    backend treats a matching skill name as an update)."""
+    settings = Settings()
+    with httpx.Client(timeout=60.0) as client:
+        result = _run_api_call(lambda: install_skill(client, settings.api_base_url, source_path))
+    result = result or {}
+    updated_name = (result.get("skill") or {}).get("name", name)
+    if updated_name != name:
+        err_console.print(
+            f"[yellow]경고:[/yellow] 설치된 스킬 이름({updated_name})이 "
+            f"요청한 이름({name})과 다릅니다"
+        )
+    passed = render_install_result(result, "업데이트")
+    if not passed:
+        raise typer.Exit(code=1)
+
+
+@skill_app.command("versions")
+def skill_versions(name: str) -> None:
+    """List installed versions of a skill."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        versions = _run_api_call(lambda: fetch_skill_versions(client, settings.api_base_url, name))
+    console.print(build_skill_versions_table(versions or []))
+
+
+@skill_app.command("rollback")
+def skill_rollback(name: str, version: str) -> None:
+    """Roll a skill back to a previously installed version."""
+    settings = Settings()
+    with httpx.Client(timeout=30.0) as client:
+        result = _run_api_call(lambda: rollback_skill(client, settings.api_base_url, name, version))
+    console.print(f"[green]롤백됨:[/green] {name} -> {version}")
+    if isinstance(result, dict) and result:
+        console.print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+@skill_app.command("remove")
+def skill_remove(name: str) -> None:
+    """Remove an installed skill from the store."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        _run_api_call(lambda: remove_skill_store(client, settings.api_base_url, name))
+    console.print(f"[yellow]제거됨:[/yellow] {name}")
+
+
 APPROVALS_ENDPOINT = "/api/v1/approvals"
 
 

@@ -287,6 +287,47 @@ class ScheduledJob(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
+class Skill(Base):
+    """Installed Skill (SPEC.md §6.5 lifecycle, §6.8 Skill Store).
+
+    No separate skill_installations table — this is a single-user system,
+    so "installed" is just this row existing with status="active". Split
+    installation state out into its own table once multi-user support
+    requires per-user install state.
+    """
+
+    __tablename__ = "skills"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    name: Mapped[str] = mapped_column(unique=True)
+    display_name: Mapped[str] = mapped_column()
+    description: Mapped[str | None] = mapped_column(default=None)
+    current_version: Mapped[str] = mapped_column()
+    status: Mapped[str] = mapped_column(default="active", server_default="active")
+    installed_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class SkillVersion(Base):
+    """Immutable record of one installed version of a Skill (SPEC.md §6.9
+    supply-chain security — manifest/audit snapshots and file hash let a
+    past install be verified or reproduced)."""
+
+    __tablename__ = "skill_versions"
+    __table_args__ = (
+        UniqueConstraint("skill_id", "version", name="uq_skill_versions_skill_id_version"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    skill_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("skills.id", ondelete="CASCADE"))
+    version: Mapped[str] = mapped_column()
+    manifest_snapshot: Mapped[dict] = mapped_column(JSONB)
+    audit_report: Mapped[dict] = mapped_column(JSONB)
+    file_hash: Mapped[str] = mapped_column()
+    store_path: Mapped[str] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
 class AuditEvent(Base):
     """Append-only audit log (SPEC.md §20.4).
 

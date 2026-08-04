@@ -15,6 +15,7 @@ from personal_ai_api.memory import router as memory_router
 from personal_ai_api.notifications import router as notifications_router
 from personal_ai_api.proactive_scheduler import run_scheduler_loop
 from personal_ai_api.projects import router as projects_router
+from personal_ai_api.skill_store import router as skill_store_router
 from personal_ai_api.skills import router as skills_router
 from personal_ai_api.tasks import router as tasks_router
 from personal_ai_api.telemetry import setup_telemetry
@@ -54,6 +55,7 @@ app.include_router(memory_router)
 app.include_router(documents_router)
 app.include_router(knowledge_router)
 app.include_router(skills_router)
+app.include_router(skill_store_router)
 app.include_router(tasks_router)
 app.include_router(workspaces_router)
 app.include_router(workflows_router)
