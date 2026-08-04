@@ -25,14 +25,17 @@ test:
 	uv run --project apps/api pytest
 	npm run test --workspace=apps/web --if-present
 
+PY_SRC := personal_ai apps/api apps/cli
+
 lint:
-	uv run --project apps/api ruff check .
-	uv run --project apps/api ruff format --check .
-	uv run --project apps/api mypy personal_ai apps/api apps/cli
+	uv run --project apps/api ruff check $(PY_SRC)
+	uv run --project apps/api ruff format --check $(PY_SRC)
+	uv run --project apps/api mypy personal_ai apps/api
+	uv run --project apps/api mypy apps/cli
 	npm run lint --workspace=apps/web
 
 format:
-	uv run --project apps/api ruff format .
+	uv run --project apps/api ruff format $(PY_SRC)
 
 doctor:
 	uv run --project apps/cli pai doctor

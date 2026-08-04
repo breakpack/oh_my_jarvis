@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/personal_ai"
     redis_url: str = "redis://localhost:6379/0"
     ollama_base_url: str = "http://localhost:11434"
+    ollama_local_fast_model: str = "gemma4:e2b"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     log_level: str = "INFO"

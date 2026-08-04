@@ -6,7 +6,7 @@ type Status = "loading" | "ok" | "error";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
-export function HealthStatus() {
+export function HealthStatus({ compact = false }: { compact?: boolean }) {
   const [status, setStatus] = useState<Status>(apiBaseUrl ? "loading" : "error");
   const [detail, setDetail] = useState(
     apiBaseUrl ? "" : "NEXT_PUBLIC_API_BASE_URL is not set",
@@ -36,6 +36,17 @@ export function HealthStatus() {
 
   const label =
     status === "loading" ? "Checking..." : status === "ok" ? "OK" : "Error";
+
+  if (compact) {
+    return (
+      <span
+        className={`rounded-full px-3 py-1 text-xs font-medium ${badge}`}
+        title={detail}
+      >
+        API: {label}
+      </span>
+    );
+  }
 
   return (
     <div className="flex w-full max-w-sm flex-col items-center gap-2 rounded-lg border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Any
 
 import httpx
 import typer
@@ -16,6 +19,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 app = typer.Typer(name="pai", help="Personal AI OS command-line interface")
 console = Console()
+err_console = Console(stderr=True)
 
 
 class Settings(BaseSettings):
@@ -24,6 +28,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/personal_ai"
     redis_url: str = "redis://localhost:6379/0"
     ollama_base_url: str = "http://localhost:11434"
+    api_base_url: str = "http://localhost:8000"
 
 
 class CheckStatus(StrEnum):
@@ -142,18 +147,187 @@ def doctor() -> None:
         raise typer.Exit(code=1)
 
 
-@app.command()
-def chat() -> None:
-    """Start an interactive chat session (Phase 1)."""
-    console.print("[yellow]pai chat is not implemented in Phase 0[/yellow]")
-    raise typer.Exit(code=1)
+CHAT_ENDPOINT = "/api/v1/chat"
+
+
+class ChatError(RuntimeError):
+    """Raised when the chat backend reports an error or a bad HTTP status."""
+
+
+@dataclass
+class SSEEvent:
+    event: str
+    data: dict[str, Any]
+
+
+def parse_sse_lines(lines: Iterable[str]) -> Iterator[SSEEvent]:
+    """Parse Server-Sent Events out of a line iterator (no network I/O)."""
+    event_type = "message"
+    data_lines: list[str] = []
+
+    def _flush() -> SSEEvent | None:
+        if not data_lines:
+            return None
+        payload = "\n".join(data_lines)
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError:
+            data = {"raw": payload}
+        return SSEEvent(event_type, data)
+
+    for raw_line in lines:
+        line = raw_line.rstrip("\n")
+        if line == "":
+            event = _flush()
+            event_type = "message"
+            data_lines = []
+            if event is not None:
+                yield event
+            continue
+        if line.startswith(":"):
+            continue
+        if line.startswith("event:"):
+            event_type = line[len("event:") :].strip()
+        elif line.startswith("data:"):
+            data_lines.append(line[len("data:") :].strip())
+
+    event = _flush()
+    if event is not None:
+        yield event
+
+
+def _extract_error_message(response: httpx.Response) -> str:
+    try:
+        body = response.json()
+    except ValueError:
+        return response.text or f"HTTP {response.status_code}"
+    if isinstance(body, dict):
+        return str(body.get("error") or body.get("detail") or body)
+    return str(body)
+
+
+def stream_chat_response(
+    client: httpx.Client,
+    base_url: str,
+    conversation_id: str | None,
+    message: str,
+    local_only: bool | None,
+) -> tuple[str, dict[str, Any]]:
+    """POST to the chat endpoint, print tokens as they arrive, return (full text, done payload)."""
+    payload: dict[str, Any] = {"conversation_id": conversation_id, "message": message}
+    if local_only is not None:
+        payload["local_only"] = local_only
+
+    chunks: list[str] = []
+    done_payload: dict[str, Any] = {}
+    url = f"{base_url.rstrip('/')}{CHAT_ENDPOINT}"
+    with client.stream("POST", url, json=payload) as response:
+        if response.status_code >= 400:
+            response.read()
+            raise ChatError(_extract_error_message(response))
+        for event in parse_sse_lines(response.iter_lines()):
+            if event.event == "token":
+                delta = event.data.get("delta", "")
+                console.print(delta, end="", markup=False, highlight=False)
+                chunks.append(delta)
+            elif event.event == "done":
+                done_payload = event.data
+            elif event.event == "error":
+                raise ChatError(event.data.get("error", "unknown error"))
+    console.print()
+    return "".join(chunks), done_payload
+
+
+def _resolve_local_only(local: bool, cloud: bool) -> bool | None:
+    if local:
+        return True
+    if cloud:
+        return False
+    return None
+
+
+def _validate_local_cloud(local: bool, cloud: bool) -> None:
+    if local and cloud:
+        err_console.print("--local and --cloud cannot be used together")
+        raise typer.Exit(code=1)
 
 
 @app.command()
-def ask(prompt: str) -> None:
-    """Ask a one-off question (Phase 1)."""
-    console.print("[yellow]pai ask is not implemented in Phase 0[/yellow]")
-    raise typer.Exit(code=1)
+def ask(
+    prompt: str,
+    conversation_id: str | None = typer.Option(
+        None, "--conversation-id", help="Continue an existing conversation"
+    ),
+    local: bool = typer.Option(False, "--local", help="Force local-only processing"),
+    cloud: bool = typer.Option(
+        False, "--cloud", help="Request cloud processing (not available in this phase)"
+    ),
+) -> None:
+    """Ask a one-off question and stream the reply."""
+    _validate_local_cloud(local, cloud)
+    local_only = _resolve_local_only(local, cloud)
+    settings = Settings()
+    try:
+        with httpx.Client(timeout=httpx.Timeout(10.0, read=120.0)) as client:
+            _, done = stream_chat_response(
+                client, settings.api_base_url, conversation_id, prompt, local_only
+            )
+    except ChatError as e:
+        err_console.print(f"error: {e}")
+        raise typer.Exit(code=1) from e
+    except httpx.HTTPError as e:
+        err_console.print(f"connection failed: {e}")
+        raise typer.Exit(code=1) from e
+
+    model = done.get("model")
+    if model:
+        console.print(f"[dim]({model})[/dim]")
+
+
+@app.command()
+def chat(
+    conversation_id: str | None = typer.Option(
+        None, "--conversation-id", help="Resume an existing conversation"
+    ),
+    local: bool = typer.Option(False, "--local", help="Force local-only processing"),
+    cloud: bool = typer.Option(
+        False, "--cloud", help="Request cloud processing (not available in this phase)"
+    ),
+) -> None:
+    """Interactive chat REPL. Type /exit or press Ctrl+D to quit."""
+    _validate_local_cloud(local, cloud)
+    local_only = _resolve_local_only(local, cloud)
+    settings = Settings()
+    active_conversation_id = conversation_id
+
+    console.print("[dim]pai chat -- type /exit or press Ctrl+D to quit[/dim]")
+    with httpx.Client(timeout=httpx.Timeout(10.0, read=120.0)) as client:
+        while True:
+            try:
+                message = input("you> ")
+            except (EOFError, KeyboardInterrupt):
+                console.print()
+                break
+            if message.strip() in {"/exit", "/quit"}:
+                break
+            if not message.strip():
+                continue
+
+            try:
+                _, done = stream_chat_response(
+                    client, settings.api_base_url, active_conversation_id, message, local_only
+                )
+            except ChatError as e:
+                err_console.print(f"error: {e}")
+                continue
+            except httpx.HTTPError as e:
+                err_console.print(f"connection failed: {e}")
+                continue
+
+            active_conversation_id = done.get("conversation_id", active_conversation_id)
+            model = done.get("model")
+            if model:
+                console.print(f"[dim]({model})[/dim]")
 
 
 if __name__ == "__main__":
