@@ -1,3 +1,7 @@
+import asyncio
+import contextlib
+from collections.abc import AsyncIterator
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -8,6 +12,8 @@ from personal_ai_api.config import settings
 from personal_ai_api.documents import router as documents_router
 from personal_ai_api.knowledge import router as knowledge_router
 from personal_ai_api.memory import router as memory_router
+from personal_ai_api.notifications import router as notifications_router
+from personal_ai_api.proactive_scheduler import run_scheduler_loop
 from personal_ai_api.projects import router as projects_router
 from personal_ai_api.skills import router as skills_router
 from personal_ai_api.tasks import router as tasks_router
@@ -15,7 +21,23 @@ from personal_ai_api.telemetry import setup_telemetry
 from personal_ai_api.workflows import router as workflows_router
 from personal_ai_api.workspaces import router as workspaces_router
 
-app = FastAPI(title="Personal AI OS - Assistant API", version=__version__)
+
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # SPEC.md §13: the proactive-assistant background poll loop. Started
+    # here (not at import time) so it only ever runs against a live,
+    # started app -- and is guaranteed cancelled on shutdown, not left
+    # dangling.
+    scheduler_task = asyncio.create_task(run_scheduler_loop())
+    try:
+        yield
+    finally:
+        scheduler_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await scheduler_task
+
+
+app = FastAPI(title="Personal AI OS - Assistant API", version=__version__, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -36,6 +58,7 @@ app.include_router(tasks_router)
 app.include_router(workspaces_router)
 app.include_router(workflows_router)
 app.include_router(approvals_router)
+app.include_router(notifications_router)
 
 
 @app.get("/health")

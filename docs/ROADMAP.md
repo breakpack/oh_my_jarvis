@@ -4,8 +4,8 @@
 
 ## 현재 상태
 
-- **Phase 0 ~ Phase 8: 완료** (`feat/phase-0` ~ `feat/phase-8` 브랜치)
-- **Phase 9 ~ Phase 10: 계획됨** — 각 Phase는 동일한 방식(오케스트레이션 병렬 개발 + `feat/phase-N` 브랜치)으로 이어서 진행한다.
+- **Phase 0 ~ Phase 9: 완료** (`feat/phase-0` ~ `feat/phase-9` 브랜치)
+- **Phase 10: 계획됨**
 
 ## Phase 목록
 
@@ -20,7 +20,7 @@
 | 6 | Development Agent | Workspace(git worktree Sandbox), Repository search/read, Patch, 명령 allowlist 기반 Test 실행, Diff, 승인 게이트된 Commit, Workspace escape 테스트. OpenHands Adapter 평가는 보류(문서화 예정) | 완료 |
 | 7 | Browser Agent | Playwright Tool(실제 Chromium), 세션 격리, web-read/web-form-submit Skill(폼 제출 승인 게이트), Prompt injection 방어+테스트. Browser Use는 Docling과 동일하게 어댑터 자리만 마련 | 완료 |
 | 8 | Durable Workflow | LangGraph + PostgreSQL Checkpoint(실제 서버 재시작 복구 검증됨), Interrupt/Resume, tool_executions 기반 중복 실행 방지, `pai workflow run/resume`. 기존 승인 흐름과 병행하는 추가 경로로 구현(기존 경로 무변경) | 완료 |
-| 9 | Proactive Assistant | Event sources, Scheduler, Deduplication, Quiet hours, Notification preferences | 계획됨 |
+| 9 | Proactive Assistant | Event sources(GitHub CI 실패, 디스크 사용량, Docker 컨테이너 이상, Task 마감일 — 실제 신호 기반), 백그라운드 Scheduler(최소 간격 강제), Dedup, Quiet hours, `pai notification` | 완료 |
 | 10 | Skill Store | Local skill package, Install/update/remove, Security audit, Version compatibility, Optional signature | 계획됨 |
 
 각 Phase의 완료 조건(Definition of Done)은 SPEC.md §23의 해당 Phase 절과 §25(공통 Definition of Done)를 함께 만족해야 한다.

@@ -1258,5 +1258,113 @@ def workflow_resume(
     render_workflow_response(response or {})
 
 
+NOTIFICATIONS_ENDPOINT = "/api/v1/notifications"
+
+
+def fetch_notifications(
+    client: httpx.Client, base_url: str, status: str | None
+) -> list[dict[str, Any]]:
+    params: dict[str, Any] = {}
+    if status is not None:
+        params["status"] = status
+    return _request_json(client, "GET", _api_url(base_url, NOTIFICATIONS_ENDPOINT), params=params)
+
+
+def mark_notification_seen(
+    client: httpx.Client, base_url: str, notification_id: str
+) -> dict[str, Any]:
+    return _request_json(
+        client, "POST", _api_url(base_url, f"{NOTIFICATIONS_ENDPOINT}/{notification_id}/seen")
+    )
+
+
+def dismiss_notification(
+    client: httpx.Client, base_url: str, notification_id: str
+) -> dict[str, Any]:
+    return _request_json(
+        client, "POST", _api_url(base_url, f"{NOTIFICATIONS_ENDPOINT}/{notification_id}/dismiss")
+    )
+
+
+def check_now_notifications(client: httpx.Client, base_url: str) -> list[dict[str, Any]]:
+    return _request_json(client, "POST", _api_url(base_url, f"{NOTIFICATIONS_ENDPOINT}/check-now"))
+
+
+def _format_priority(priority: str) -> str:
+    style = {"high": "red", "medium": "yellow"}.get(priority)
+    return f"[{style}]{priority}[/{style}]" if style else priority
+
+
+def build_notifications_table(notifications: list[dict[str, Any]]) -> Table:
+    table = Table(title="Notifications")
+    table.add_column("ID")
+    table.add_column("Source")
+    table.add_column("Priority")
+    table.add_column("Title")
+    table.add_column("Created")
+    for notification in notifications:
+        table.add_row(
+            str(notification.get("id", "")),
+            str(notification.get("source_type", "")),
+            _format_priority(str(notification.get("priority", ""))),
+            str(notification.get("title", "")),
+            str(notification.get("created_at", "")),
+        )
+    return table
+
+
+notification_app = typer.Typer(help="View and act on system notifications")
+app.add_typer(notification_app, name="notification")
+
+
+@notification_app.command("list")
+def notification_list(
+    status: str | None = typer.Option(
+        None, "--status", help="Filter by status (server defaults to unseen)"
+    ),
+) -> None:
+    """List notifications."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        notifications = _run_api_call(
+            lambda: fetch_notifications(client, settings.api_base_url, status)
+        )
+    console.print(build_notifications_table(notifications or []))
+
+
+@notification_app.command("seen")
+def notification_seen(notification_id: str) -> None:
+    """Mark a notification as seen."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        _run_api_call(
+            lambda: mark_notification_seen(client, settings.api_base_url, notification_id)
+        )
+    console.print(f"[green]seen:[/green] {notification_id}")
+
+
+@notification_app.command("dismiss")
+def notification_dismiss(notification_id: str) -> None:
+    """Dismiss a notification."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        _run_api_call(lambda: dismiss_notification(client, settings.api_base_url, notification_id))
+    console.print(f"[yellow]dismissed:[/yellow] {notification_id}")
+
+
+@notification_app.command("check-now")
+def notification_check_now() -> None:
+    """Manually trigger a notification check and print any newly created notifications."""
+    settings = Settings()
+    with httpx.Client(timeout=30.0) as client:
+        notifications = _run_api_call(
+            lambda: check_now_notifications(client, settings.api_base_url)
+        )
+    notifications = notifications or []
+    console.print(f"[green]{len(notifications)}건의 새 알림[/green]")
+    if notifications:
+        console.print(build_notifications_table(notifications))
+
+
 if __name__ == "__main__":
     app()

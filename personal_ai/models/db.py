@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, UniqueConstraint, func, text
+from sqlalchemy import ForeignKey, Index, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -247,6 +247,42 @@ class ToolExecution(Base):
     arguments_hash: Mapped[str] = mapped_column()
     status: Mapped[str] = mapped_column(default="running", server_default="running")
     result: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class Notification(Base):
+    """Proactive-assistant notification (SPEC.md §13)."""
+
+    __tablename__ = "notifications"
+    __table_args__ = (Index("ix_notifications_user_id_dedupe_key", "user_id", "dedupe_key"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    source_type: Mapped[str] = mapped_column()
+    title: Mapped[str] = mapped_column()
+    body: Mapped[str] = mapped_column()
+    priority: Mapped[str] = mapped_column()
+    dedupe_key: Mapped[str] = mapped_column()
+    status: Mapped[str] = mapped_column(default="unseen", server_default="unseen")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class ScheduledJob(Base):
+    """Recurring background job, e.g. the proactive-assistant check loop
+    (SPEC.md §13)."""
+
+    __tablename__ = "scheduled_jobs"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    job_type: Mapped[str] = mapped_column(
+        default="proactive_check", server_default="proactive_check"
+    )
+    interval_seconds: Mapped[int] = mapped_column()
+    last_run_at: Mapped[datetime | None] = mapped_column(default=None)
+    next_run_at: Mapped[datetime | None] = mapped_column(default=None)
+    enabled: Mapped[bool] = mapped_column(default=True, server_default="true")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 

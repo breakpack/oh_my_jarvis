@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ApprovalsPanel } from "./approvals-panel";
 import { KnowledgePanel } from "./knowledge-panel";
 import { MemoryPanel } from "./memory-panel";
+import { NotificationsPanel } from "./notifications-panel";
 import { SkillsPanel } from "./skills-panel";
 import { TasksPanel } from "./tasks-panel";
 import { WorkspacesPanel } from "./workspaces-panel";
@@ -200,6 +201,7 @@ export function Sidebar({
       <SkillsPanel activeProjectId={activeProjectId} />
       <TasksPanel activeProjectId={activeProjectId} />
       <WorkspacesPanel />
+      <NotificationsPanel />
       <ApprovalsPanel />
     </aside>
   );
