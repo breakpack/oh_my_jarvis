@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, func, text
+from sqlalchemy import ForeignKey, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -219,6 +219,36 @@ class WorkspaceRun(Base):
     stderr: Mapped[str] = mapped_column()
     duration_ms: Mapped[int] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class ToolExecution(Base):
+    """Tool execution ledger (SPEC.md §25 DoD "중복 Tool 실행 방지").
+
+    The UNIQUE constraint on (workflow_thread_id, tool_name,
+    arguments_hash) is the DB-level guarantee: a second attempt to record
+    the same tool call with the same arguments in the same LangGraph
+    checkpoint thread is rejected by the database itself, not just by
+    application logic.
+    """
+
+    __tablename__ = "tool_executions"
+    __table_args__ = (
+        UniqueConstraint(
+            "workflow_thread_id",
+            "tool_name",
+            "arguments_hash",
+            name="uq_tool_executions_thread_tool_arguments",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    workflow_thread_id: Mapped[str] = mapped_column()
+    tool_name: Mapped[str] = mapped_column()
+    arguments_hash: Mapped[str] = mapped_column()
+    status: Mapped[str] = mapped_column(default="running", server_default="running")
+    result: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
 class AuditEvent(Base):

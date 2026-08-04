@@ -21,6 +21,9 @@ dependencies = [
     "python-multipart>=0.0.12",
     "mcp>=1.0",
     "playwright>=1.47",
+    "langgraph>=1.0",
+    "langgraph-checkpoint-postgres>=3.0",
+    "psycopg[binary]>=3.2",
 ]
 
 [dependency-groups]

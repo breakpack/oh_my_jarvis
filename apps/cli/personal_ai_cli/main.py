@@ -1172,5 +1172,91 @@ def workspace_destroy(workspace_id: str) -> None:
     console.print(f"[yellow]destroyed:[/yellow] {workspace_id}")
 
 
+WORKFLOWS_ENDPOINT = "/api/v1/workflows"
+
+
+def run_workflow(
+    client: httpx.Client, base_url: str, skill_name: str, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    return _request_json(
+        client,
+        "POST",
+        _api_url(base_url, f"{WORKFLOWS_ENDPOINT}/skills/{skill_name}/run"),
+        json={"arguments": arguments},
+    )
+
+
+def resume_workflow(
+    client: httpx.Client, base_url: str, thread_id: str, decision: str
+) -> dict[str, Any]:
+    return _request_json(
+        client,
+        "POST",
+        _api_url(base_url, f"{WORKFLOWS_ENDPOINT}/{thread_id}/resume"),
+        json={"decision": decision},
+    )
+
+
+def render_workflow_response(response: dict[str, Any]) -> None:
+    """Print a run/resume workflow response; raise typer.Exit(1) if a
+    completed run's SkillResult reports failure (mirrors `pai skill run`)."""
+    if response.get("status") == "pending_approval":
+        thread_id = response.get("thread_id", "")
+        console.print(
+            f"[yellow]승인 대기 중[/yellow] (thread: {thread_id})  "
+            f"'pai workflow resume {thread_id} --decision approve'로 진행하세요"
+        )
+        return
+    result = response.get("result") or {}
+    render_skill_result(result)
+    if not result.get("success", False):
+        raise typer.Exit(code=1)
+
+
+workflow_app = typer.Typer(help="Run and resume durable, restart-safe Skill workflows")
+app.add_typer(workflow_app, name="workflow")
+
+
+@workflow_app.command("run")
+def workflow_run(
+    skill: str,
+    input_json: str = typer.Option(..., "--input", help="JSON-encoded arguments object"),
+) -> None:
+    """Run a skill as a durable workflow (survives a server restart while paused on approval)."""
+    try:
+        arguments = json.loads(input_json)
+    except json.JSONDecodeError as e:
+        err_console.print(f"error: --input is not valid JSON: {e}")
+        raise typer.Exit(code=1) from e
+    if not isinstance(arguments, dict):
+        err_console.print("error: --input must decode to a JSON object")
+        raise typer.Exit(code=1)
+
+    settings = Settings()
+    with httpx.Client(timeout=60.0) as client:
+        response = _run_api_call(
+            lambda: run_workflow(client, settings.api_base_url, skill, arguments)
+        )
+    render_workflow_response(response or {})
+
+
+@workflow_app.command("resume")
+def workflow_resume(
+    thread_id: str,
+    decision: str = typer.Option(..., "--decision", help="approve or reject"),
+) -> None:
+    """Resume a paused workflow with an approve/reject decision."""
+    if decision not in {"approve", "reject"}:
+        err_console.print("error: --decision must be 'approve' or 'reject'")
+        raise typer.Exit(code=1)
+
+    settings = Settings()
+    with httpx.Client(timeout=60.0) as client:
+        response = _run_api_call(
+            lambda: resume_workflow(client, settings.api_base_url, thread_id, decision)
+        )
+    render_workflow_response(response or {})
+
+
 if __name__ == "__main__":
     app()
