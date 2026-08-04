@@ -812,6 +812,13 @@ def skill_run(
             lambda: run_skill(client, settings.api_base_url, name, arguments, project)
         )
     result = result or {}
+    if result.get("status") == "pending_approval":
+        approval_id = result.get("approval_id", "")
+        console.print(
+            f"[yellow]승인 대기 중[/yellow] (approval id: {approval_id})  "
+            f"'pai approval approve {approval_id}'로 승인하세요"
+        )
+        return
     render_skill_result(result)
     if not result.get("success", False):
         raise typer.Exit(code=1)
@@ -824,6 +831,215 @@ def skill_audit(name: str) -> None:
     with httpx.Client(timeout=10.0) as client:
         entries = _run_api_call(lambda: fetch_skill_audit(client, settings.api_base_url, name))
     console.print(build_skill_audit_table(entries or []))
+
+
+APPROVALS_ENDPOINT = "/api/v1/approvals"
+
+
+def fetch_approvals(
+    client: httpx.Client, base_url: str, status: str | None
+) -> list[dict[str, Any]]:
+    params: dict[str, Any] = {}
+    if status is not None:
+        params["status"] = status
+    return _request_json(client, "GET", _api_url(base_url, APPROVALS_ENDPOINT), params=params)
+
+
+def approve_approval(client: httpx.Client, base_url: str, approval_id: str) -> Any:
+    return _request_json(
+        client, "POST", _api_url(base_url, f"{APPROVALS_ENDPOINT}/{approval_id}/approve")
+    )
+
+
+def reject_approval(client: httpx.Client, base_url: str, approval_id: str) -> None:
+    _request_json(client, "POST", _api_url(base_url, f"{APPROVALS_ENDPOINT}/{approval_id}/reject"))
+
+
+def build_approvals_table(approvals: list[dict[str, Any]]) -> Table:
+    table = Table(title="Approvals")
+    table.add_column("ID")
+    table.add_column("Action")
+    table.add_column("Target")
+    table.add_column("Risk Level")
+    table.add_column("Status")
+    table.add_column("Expires At")
+    for approval in approvals:
+        table.add_row(
+            str(approval.get("id", "")),
+            str(approval.get("action", "")),
+            str(approval.get("target", "")),
+            str(approval.get("risk_level", "")),
+            str(approval.get("status", "")),
+            str(approval.get("expires_at", "")),
+        )
+    return table
+
+
+def render_approval_detail(approval: dict[str, Any]) -> None:
+    preview = approval.get("preview")
+    if preview:
+        console.print(f"[dim]preview:[/dim] {preview}")
+    expected_effects = approval.get("expected_effects") or []
+    if expected_effects:
+        console.print("[dim]expected effects:[/dim]")
+        for effect in expected_effects:
+            console.print(f"  - {effect}")
+    if approval.get("rollback_available"):
+        console.print("[dim]rollback available[/dim]")
+
+
+def render_approval_result(result: Any) -> None:
+    if isinstance(result, dict) and "success" in result:
+        render_skill_result(result)
+    elif isinstance(result, dict):
+        console.print(json.dumps(result, indent=2, ensure_ascii=False))
+    elif result is not None:
+        console.print(str(result))
+
+
+approval_app = typer.Typer(help="Review and act on pending approvals")
+app.add_typer(approval_app, name="approval")
+
+
+@approval_app.command("list")
+def approval_list(
+    status: str | None = typer.Option(None, "--status", help="Filter by approval status"),
+) -> None:
+    """List approvals."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        approvals = _run_api_call(lambda: fetch_approvals(client, settings.api_base_url, status))
+    approvals = approvals or []
+    console.print(build_approvals_table(approvals))
+    for approval in approvals:
+        render_approval_detail(approval)
+
+
+@approval_app.command("approve")
+def approval_approve(approval_id: str) -> None:
+    """Approve a pending approval and execute the underlying action."""
+    settings = Settings()
+    with httpx.Client(timeout=60.0) as client:
+        result = _run_api_call(lambda: approve_approval(client, settings.api_base_url, approval_id))
+    console.print(f"[green]approved:[/green] {approval_id}")
+    render_approval_result(result)
+
+
+@approval_app.command("reject")
+def approval_reject(approval_id: str) -> None:
+    """Reject a pending approval."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        _run_api_call(lambda: reject_approval(client, settings.api_base_url, approval_id))
+    console.print(f"[yellow]rejected:[/yellow] {approval_id}")
+
+
+TASKS_ENDPOINT = "/api/v1/tasks"
+
+
+def fetch_tasks(
+    client: httpx.Client, base_url: str, project_id: str | None, status: str | None
+) -> list[dict[str, Any]]:
+    params: dict[str, Any] = {}
+    if project_id is not None:
+        params["project_id"] = project_id
+    if status is not None:
+        params["status"] = status
+    return _request_json(client, "GET", _api_url(base_url, TASKS_ENDPOINT), params=params)
+
+
+def create_task(
+    client: httpx.Client,
+    base_url: str,
+    title: str,
+    description: str | None,
+    project_id: str | None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"title": title}
+    if description is not None:
+        payload["description"] = description
+    if project_id is not None:
+        payload["project_id"] = project_id
+    return _request_json(client, "POST", _api_url(base_url, TASKS_ENDPOINT), json=payload)
+
+
+def update_task(
+    client: httpx.Client, base_url: str, task_id: str, status: str | None
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    if status is not None:
+        payload["status"] = status
+    return _request_json(
+        client, "PATCH", _api_url(base_url, f"{TASKS_ENDPOINT}/{task_id}"), json=payload
+    )
+
+
+def build_tasks_table(tasks: list[dict[str, Any]]) -> Table:
+    table = Table(title="Tasks")
+    table.add_column("ID")
+    table.add_column("Title")
+    table.add_column("Status")
+    table.add_column("Project")
+    table.add_column("Due")
+    for task in tasks:
+        table.add_row(
+            str(task.get("id", "")),
+            str(task.get("title", "")),
+            str(task.get("status", "")),
+            str(task.get("project_id", "")),
+            str(task.get("due_at", "")),
+        )
+    return table
+
+
+task_app = typer.Typer(help="Manage tasks")
+app.add_typer(task_app, name="task")
+
+
+@task_app.command("list")
+def task_list(
+    project: str | None = typer.Option(None, "--project", help="Filter by project id"),
+    status: str | None = typer.Option(None, "--status", help="Filter by task status"),
+) -> None:
+    """List tasks."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        tasks = _run_api_call(lambda: fetch_tasks(client, settings.api_base_url, project, status))
+    console.print(build_tasks_table(tasks or []))
+
+
+@task_app.command("create")
+def task_create(
+    title: str,
+    description: str | None = typer.Option(None, "--description", help="Task description"),
+    project: str | None = typer.Option(None, "--project", help="Attach to a project id"),
+) -> None:
+    """Create a new task."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        task = _run_api_call(
+            lambda: create_task(client, settings.api_base_url, title, description, project)
+        )
+    task = task or {}
+    console.print(f"[green]created:[/green] {task.get('id', '')}")
+
+
+@task_app.command("update")
+def task_update(
+    task_id: str,
+    status: str | None = typer.Option(None, "--status", help="New task status"),
+) -> None:
+    """Update a task's status."""
+    if status is None:
+        err_console.print("error: nothing to update, pass --status")
+        raise typer.Exit(code=1)
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        task = _run_api_call(lambda: update_task(client, settings.api_base_url, task_id, status))
+    task = task or {}
+    console.print(
+        f"[green]updated:[/green] {task.get('id', task_id)} -> {task.get('status', status)}"
+    )
 
 
 if __name__ == "__main__":

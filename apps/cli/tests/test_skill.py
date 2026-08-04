@@ -197,6 +197,21 @@ def test_run_skill_raises_api_error_on_409_conflict() -> None:
         client.close()
 
 
+def test_run_skill_returns_pending_approval_body_on_202() -> None:
+    pending_body = {"status": "pending_approval", "approval_id": "appr1"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(202, content=json.dumps(pending_body).encode())
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        result = run_skill(client, "http://testserver", "notion-research-note", {}, None)
+    finally:
+        client.close()
+
+    assert result == pending_body
+
+
 def test_run_skill_raises_api_error_on_501_not_implemented() -> None:
     client = _client(501, {"detail": "skill execution not implemented"})
     try:

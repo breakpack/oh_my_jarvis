@@ -38,6 +38,17 @@ type SkillResult = {
   error?: string | null;
 };
 
+type PendingApproval = {
+  status: "pending_approval";
+  approval_id: string;
+};
+
+type SkillRunResponse = SkillResult | PendingApproval;
+
+function isPendingApproval(result: SkillRunResponse): result is PendingApproval {
+  return (result as PendingApproval).status === "pending_approval";
+}
+
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 export function SkillsPanel({
@@ -60,7 +71,7 @@ export function SkillsPanel({
 
   const [runInput, setRunInput] = useState("{}");
   const [running, setRunning] = useState(false);
-  const [runResult, setRunResult] = useState<SkillResult | null>(null);
+  const [runResult, setRunResult] = useState<SkillRunResponse | null>(null);
   const [runError, setRunError] = useState("");
 
   async function loadSkills(q: string) {
@@ -163,7 +174,7 @@ export function SkillsPanel({
       );
       const body = await res.json().catch(() => null);
       if (!res.ok) throw new Error(extractErrorMessage(body, `HTTP ${res.status}`));
-      setRunResult(body as SkillResult);
+      setRunResult(body as SkillRunResponse);
     } catch (err) {
       setRunError(err instanceof Error ? err.message : "스킬 실행에 실패했습니다.");
     } finally {
@@ -301,7 +312,17 @@ export function SkillsPanel({
                     {runError && (
                       <p className="text-red-600 dark:text-red-400">{runError}</p>
                     )}
-                    {runResult && (
+                    {runResult && isPendingApproval(runResult) && (
+                      <div className="rounded-lg border border-yellow-300 bg-yellow-50 p-2 dark:border-yellow-700 dark:bg-yellow-950">
+                        <p className="font-medium text-yellow-800 dark:text-yellow-200">
+                          승인 대기 중입니다 — Approvals 패널에서 승인하세요
+                        </p>
+                        <p className="mt-1 text-yellow-700 dark:text-yellow-300">
+                          approval id: {runResult.approval_id}
+                        </p>
+                      </div>
+                    )}
+                    {runResult && !isPendingApproval(runResult) && (
                       <div
                         className={`rounded-lg border p-2 ${
                           runResult.success

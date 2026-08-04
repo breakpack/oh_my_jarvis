@@ -1,0 +1,42 @@
+api_version: personal-ai-os/v1
+kind: Skill
+metadata:
+  name: github-issue-create
+  display_name: GitHub Issue Create
+  version: 0.1.0
+  description: 사용자 승인을 받은 뒤 지정한 GitHub 저장소에 새 이슈를 생성한다.
+  license: MIT
+  author: local
+  tags:
+    - github
+    - issues
+    - development
+runtime:
+  type: python
+  entrypoint: workflow.py
+  timeout_seconds: 30
+  network_access: allowlist
+models:
+  preferred: []
+  local_only_supported: true
+capabilities:
+  tools:
+    - github.create_issue
+  resources: []
+permissions:
+  risk_level: medium
+  scopes:
+    - github.write
+approval:
+  required_before:
+    - github.create_issue
+input_schema: input.schema.json
+output_schema: output.schema.json
+verification:
+  required: true
+  checks:
+    - issue_number_present
+    - repo_matches_request
+rollback:
+  supported: true
+  strategy: close_created_issue

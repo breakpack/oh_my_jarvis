@@ -11,11 +11,54 @@ paths that return before touching the repository.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from fastapi.testclient import TestClient
 from personal_ai_api import skills_service
+from personal_ai_api.approvals_repository import get_approvals_repository
 from personal_ai_api.main import app
 from personal_ai_api.skills_service import get_skills_repository
+
+
+class FakeApprovalsRepository:
+    def __init__(self) -> None:
+        self.created: list[dict] = []
+        self._counter = 0
+
+    async def get_or_create_default_user(self) -> str:
+        return "user-1"
+
+    async def create_approval(
+        self,
+        user_id,
+        action,
+        target,
+        risk_level,
+        arguments,
+        arguments_hash,
+        preview,
+        expected_effects,
+        rollback_available,
+        expires_at,
+    ):
+        self._counter += 1
+        record = SimpleNamespace(
+            id=f"approval-{self._counter}",
+            user_id=user_id,
+            action=action,
+            target=target,
+            risk_level=risk_level,
+            arguments=arguments,
+            arguments_hash=arguments_hash,
+            preview=preview,
+            expected_effects=expected_effects,
+            rollback_available=rollback_available,
+            expires_at=expires_at,
+            status="pending",
+        )
+        self.created.append(vars(record))
+        return record
 
 
 class FakeSkillsRepository:
@@ -56,8 +99,14 @@ def repository() -> FakeSkillsRepository:
 
 
 @pytest.fixture
-def client(repository: FakeSkillsRepository):
+def approvals_repository() -> FakeApprovalsRepository:
+    return FakeApprovalsRepository()
+
+
+@pytest.fixture
+def client(repository: FakeSkillsRepository, approvals_repository: FakeApprovalsRepository):
     app.dependency_overrides[get_skills_repository] = lambda: repository
+    app.dependency_overrides[get_approvals_repository] = lambda: approvals_repository
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -212,8 +261,39 @@ def test_run_notion_lookup_stub_returns_501(client: TestClient) -> None:
     assert "not yet implemented" in response.json()["detail"]
 
 
+def test_run_medium_risk_skill_creates_approval_instead_of_executing(
+    client: TestClient, approvals_repository: FakeApprovalsRepository
+) -> None:
+    """SPEC §25 DoD '승인 전 실행 불가': github-issue-create is manifest
+    risk_level=medium, so /run must never call execute() -- it should
+    create a pending Approval and return 202 instead."""
+    response = client.post(
+        "/api/v1/skills/github-issue-create/run",
+        json={"arguments": {"repo": "acme/widgets", "title": "Bug: widget explodes"}},
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "pending_approval"
+    assert body["approval_id"]
+
+    assert len(approvals_repository.created) == 1
+    approval = approvals_repository.created[0]
+    assert approval["action"] == "skill:github-issue-create"
+    assert approval["risk_level"] == "medium"
+    assert approval["target"] == "acme/widgets"
+    assert approval["arguments"] == {"repo": "acme/widgets", "title": "Bug: widget explodes"}
+    assert approval["rollback_available"] is True
+    assert approval["status"] == "pending"
+
+
 def test_query_param_ranks_the_best_matching_skill_first(client: TestClient) -> None:
-    response = client.get("/api/v1/skills", params={"query": "github issues", "top_k": 1})
+    # "이슈 목록 조회" (list/query issues) scores github-issues-lookup 2
+    # (description + Trigger Conditions both use "이슈"/"조회") vs. 1 for
+    # github-issue-create and calendar-lookup -- a query like plain "github
+    # issues" is ambiguous now that github-issue-create shares the same
+    # tags, so this query is chosen for an unambiguous score margin.
+    response = client.get("/api/v1/skills", params={"query": "이슈 목록 조회", "top_k": 1})
 
     assert response.status_code == 200
     skills = response.json()["skills"]

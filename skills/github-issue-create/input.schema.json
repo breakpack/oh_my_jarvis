@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "github-issue-create input",
+  "type": "object",
+  "properties": {
+    "repo": {
+      "type": "string",
+      "description": "owner/repo 형식의 GitHub 저장소 식별자 (예: anthropics/claude-code)"
+    },
+    "title": {
+      "type": "string",
+      "description": "생성할 이슈의 제목"
+    },
+    "body": {
+      "type": "string",
+      "description": "이슈 본문 (선택, 생략 시 빈 문자열)"
+    }
+  },
+  "required": ["repo", "title"],
+  "additionalProperties": false
+}

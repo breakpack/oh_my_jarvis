@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ApprovalsPanel } from "./approvals-panel";
 import { KnowledgePanel } from "./knowledge-panel";
 import { MemoryPanel } from "./memory-panel";
 import { SkillsPanel } from "./skills-panel";
+import { TasksPanel } from "./tasks-panel";
 
 type Project = {
   id: string;
@@ -195,6 +197,8 @@ export function Sidebar({
       <MemoryPanel activeProjectId={activeProjectId} />
       <KnowledgePanel activeProjectId={activeProjectId} />
       <SkillsPanel activeProjectId={activeProjectId} />
+      <TasksPanel activeProjectId={activeProjectId} />
+      <ApprovalsPanel />
     </aside>
   );
 }

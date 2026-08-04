@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from personal_ai_api import __version__
+from personal_ai_api.approvals import router as approvals_router
 from personal_ai_api.chat import router as chat_router
 from personal_ai_api.config import settings
 from personal_ai_api.documents import router as documents_router
@@ -9,6 +10,7 @@ from personal_ai_api.knowledge import router as knowledge_router
 from personal_ai_api.memory import router as memory_router
 from personal_ai_api.projects import router as projects_router
 from personal_ai_api.skills import router as skills_router
+from personal_ai_api.tasks import router as tasks_router
 from personal_ai_api.telemetry import setup_telemetry
 
 app = FastAPI(title="Personal AI OS - Assistant API", version=__version__)
@@ -28,6 +30,8 @@ app.include_router(memory_router)
 app.include_router(documents_router)
 app.include_router(knowledge_router)
 app.include_router(skills_router)
+app.include_router(tasks_router)
+app.include_router(approvals_router)
 
 
 @app.get("/health")

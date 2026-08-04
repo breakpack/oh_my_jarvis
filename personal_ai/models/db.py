@@ -149,6 +149,44 @@ class DocumentEmbedding(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL"), default=None
+    )
+    title: Mapped[str] = mapped_column()
+    description: Mapped[str | None] = mapped_column(default=None)
+    status: Mapped[str] = mapped_column(default="open", server_default="open")
+    due_at: Mapped[datetime | None] = mapped_column(default=None)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class Approval(Base):
+    """Approval object for risky Tool/action execution (SPEC.md §12)."""
+
+    __tablename__ = "approvals"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    action: Mapped[str] = mapped_column()
+    target: Mapped[str] = mapped_column()
+    risk_level: Mapped[str] = mapped_column()
+    arguments: Mapped[dict] = mapped_column(JSONB)
+    arguments_hash: Mapped[str] = mapped_column()
+    preview: Mapped[str] = mapped_column()
+    expected_effects: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
+    rollback_available: Mapped[bool] = mapped_column(default=False, server_default="false")
+    rollback_token: Mapped[str | None] = mapped_column(default=None)
+    status: Mapped[str] = mapped_column(default="pending", server_default="pending")
+    expires_at: Mapped[datetime | None] = mapped_column(default=None)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
 class AuditEvent(Base):
     """Append-only audit log (SPEC.md §20.4).
 
