@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "web-form-submit input",
+  "type": "object",
+  "properties": {
+    "url": {
+      "type": "string",
+      "description": "폼이 있는 페이지의 절대 URL"
+    },
+    "fields": {
+      "type": "object",
+      "description": "{CSS 선택자: 입력값} 형태의 dict",
+      "additionalProperties": { "type": "string" }
+    },
+    "submit_selector": {
+      "type": "string",
+      "description": "제출 버튼의 CSS 선택자"
+    }
+  },
+  "required": ["url", "fields", "submit_selector"],
+  "additionalProperties": false
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "web-read input",
+  "type": "object",
+  "properties": {
+    "url": {
+      "type": "string",
+      "description": "읽어올 페이지의 절대 URL"
+    },
+    "selector": {
+      "type": "string",
+      "description": "텍스트를 추출할 CSS 선택자 (선택, 생략 시 body 전체)"
+    }
+  },
+  "required": ["url"],
+  "additionalProperties": false
+}

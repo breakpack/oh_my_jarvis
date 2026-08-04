@@ -1,0 +1,39 @@
+api_version: personal-ai-os/v1
+kind: Skill
+metadata:
+  name: web-read
+  display_name: Web Read
+  version: 0.1.0
+  description: 지정한 URL의 웹페이지 내용을 읽어와 텍스트로 반환한다.
+  license: MIT
+  author: local
+  tags:
+    - web
+    - browser
+    - read
+runtime:
+  type: python
+  entrypoint: workflow.py
+  timeout_seconds: 30
+  network_access: allowlist
+models:
+  preferred: []
+  local_only_supported: true
+capabilities:
+  tools:
+    - browser.navigate
+    - browser.extract
+  resources: []
+permissions:
+  risk_level: read
+  scopes:
+    - browser.read
+input_schema: input.schema.json
+output_schema: output.schema.json
+verification:
+  required: true
+  checks:
+    - evidence_present
+rollback:
+  supported: false
+  strategy: not_applicable_read_only

@@ -1,0 +1,41 @@
+api_version: personal-ai-os/v1
+kind: Skill
+metadata:
+  name: web-form-submit
+  display_name: Web Form Submit
+  version: 0.1.0
+  description: 사용자 승인을 받은 뒤 지정한 웹페이지의 폼 필드를 채우고 제출한다.
+  license: MIT
+  author: local
+  tags:
+    - web
+    - browser
+    - write
+runtime:
+  type: python
+  entrypoint: workflow.py
+  timeout_seconds: 30
+  network_access: allowlist
+models:
+  preferred: []
+  local_only_supported: true
+capabilities:
+  tools:
+    - browser.submit_form
+  resources: []
+permissions:
+  risk_level: medium
+  scopes:
+    - browser.write
+approval:
+  required_before:
+    - browser.submit_form
+input_schema: input.schema.json
+output_schema: output.schema.json
+verification:
+  required: true
+  checks:
+    - url_matches_request
+rollback:
+  supported: false
+  strategy: not_applicable_irreversible
