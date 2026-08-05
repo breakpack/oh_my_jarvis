@@ -1,5 +1,11 @@
 .PHONY: setup dev dev-infra dev-api dev-web dev-cli test lint format doctor migrate
 
+# Load .env into every target's environment (e.g. DATABASE_URL for alembic/pai).
+ifneq (,$(wildcard ./.env))
+    include .env
+    export
+endif
+
 COMPOSE := docker compose -f infra/compose/docker-compose.yml
 
 setup:
