@@ -48,12 +48,29 @@ export function ChatView({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [restoreError, setRestoreError] = useState("");
+  const [models, setModels] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState("");
   const loadedIdRef = useRef<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages]);
+
+  useEffect(() => {
+    if (!apiBaseUrl) return;
+    fetch(`${apiBaseUrl}/api/v1/models`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: unknown) => {
+        const list = Array.isArray(data) ? data : [];
+        setModels(
+          (list as Array<Record<string, unknown>>)
+            .map((m) => String(m.name ?? ""))
+            .filter(Boolean),
+        );
+      })
+      .catch(() => setModels([]));
+  }, []);
 
   useEffect(() => {
     if (conversationId === loadedIdRef.current) return;
@@ -132,6 +149,7 @@ export function ChatView({
           conversation_id: conversationId,
           message: text,
           ...(activeProjectId ? { project_id: activeProjectId } : {}),
+          ...(selectedModel ? { model: selectedModel } : {}),
         }),
       });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
@@ -265,10 +283,26 @@ export function ChatView({
         className="border-t border-zinc-200 px-6 py-4 dark:border-zinc-800"
       >
         <div className="mx-auto flex max-w-2xl flex-col gap-1.5">
-          <p className="text-xs text-zinc-400 dark:text-zinc-500">
-            팁: <code>/remember 내용</code> · <code>/forget 검색어</code> ·{" "}
-            <code>/no-memory 메시지</code>
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-zinc-400 dark:text-zinc-500">
+              팁: <code>/remember 내용</code> · <code>/forget 검색어</code> ·{" "}
+              <code>/no-memory 메시지</code>
+            </p>
+            {models.length > 0 && (
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-600 outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+              >
+                <option value="">서버 기본값</option>
+                {models.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
           <div className="flex gap-2">
             <textarea
               value={input}

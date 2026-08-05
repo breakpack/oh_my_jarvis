@@ -70,6 +70,8 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("help", handlers_core.help_command))
     application.add_handler(CommandHandler("doctor", handlers_core.doctor))
     application.add_handler(CommandHandler("newconv", handlers_core.newconv))
+    application.add_handler(CommandHandler("model", handlers_core.model_show_or_set))
+    application.add_handler(CommandHandler("model_list", handlers_core.model_list))
 
     application.add_handler(CommandHandler("project_list", handlers_project.project_list))
     application.add_handler(CommandHandler("project_create", handlers_project.project_create))

@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/personal_ai"
     redis_url: str = "redis://localhost:6379/0"
     ollama_base_url: str = "http://localhost:11434"
-    api_base_url: str = "http://localhost:8000"
+    api_base_url: str = "http://localhost:8010"
 
 
 class CheckStatus(StrEnum):
@@ -215,6 +215,7 @@ def stream_chat_response(
     message: str,
     local_only: bool | None,
     project_id: str | None = None,
+    model: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """POST to the chat endpoint, print tokens as they arrive, return (full text, done payload)."""
     payload: dict[str, Any] = {"conversation_id": conversation_id, "message": message}
@@ -222,6 +223,8 @@ def stream_chat_response(
         payload["local_only"] = local_only
     if project_id is not None:
         payload["project_id"] = project_id
+    if model is not None:
+        payload["model"] = model
 
     chunks: list[str] = []
     done_payload: dict[str, Any] = {}
@@ -268,6 +271,9 @@ def ask(
         False, "--cloud", help="Request cloud processing (not available in this phase)"
     ),
     project: str | None = typer.Option(None, "--project", help="Scope the request to a project"),
+    model: str | None = typer.Option(
+        None, "--model", help="Ollama model to use (default: server's OLLAMA_LOCAL_FAST_MODEL)"
+    ),
 ) -> None:
     """Ask a one-off question and stream the reply."""
     _validate_local_cloud(local, cloud)
@@ -276,7 +282,13 @@ def ask(
     try:
         with httpx.Client(timeout=httpx.Timeout(10.0, read=120.0)) as client:
             _, done = stream_chat_response(
-                client, settings.api_base_url, conversation_id, prompt, local_only, project
+                client,
+                settings.api_base_url,
+                conversation_id,
+                prompt,
+                local_only,
+                project,
+                model,
             )
     except ChatError as e:
         err_console.print(f"error: {e}")
@@ -300,14 +312,19 @@ def chat(
         False, "--cloud", help="Request cloud processing (not available in this phase)"
     ),
     project: str | None = typer.Option(None, "--project", help="Scope the session to a project"),
+    model: str | None = typer.Option(
+        None, "--model", help="Ollama model to use (default: server's OLLAMA_LOCAL_FAST_MODEL)"
+    ),
 ) -> None:
-    """Interactive chat REPL. Type /exit or press Ctrl+D to quit."""
+    """Interactive chat REPL. Type /exit or press Ctrl+D to quit, /model [name] to
+    show or switch the active model."""
     _validate_local_cloud(local, cloud)
     local_only = _resolve_local_only(local, cloud)
     settings = Settings()
     active_conversation_id = conversation_id
+    active_model = model
 
-    console.print("[dim]pai chat -- type /exit or press Ctrl+D to quit[/dim]")
+    console.print("[dim]pai chat -- type /exit or press Ctrl+D to quit, /model [name][/dim]")
     with httpx.Client(timeout=httpx.Timeout(10.0, read=120.0)) as client:
         while True:
             try:
@@ -315,9 +332,17 @@ def chat(
             except (EOFError, KeyboardInterrupt):
                 console.print()
                 break
-            if message.strip() in {"/exit", "/quit"}:
+            stripped = message.strip()
+            if stripped in {"/exit", "/quit"}:
                 break
-            if not message.strip():
+            if stripped == "/model":
+                console.print(f"[dim]current model: {active_model or '(server default)'}[/dim]")
+                continue
+            if stripped.startswith("/model "):
+                active_model = stripped[len("/model ") :].strip() or None
+                console.print(f"[dim]model set to: {active_model or '(server default)'}[/dim]")
+                continue
+            if not stripped:
                 continue
 
             try:
@@ -328,6 +353,7 @@ def chat(
                     message,
                     local_only,
                     project,
+                    active_model,
                 )
             except ChatError as e:
                 err_console.print(f"error: {e}")
@@ -337,9 +363,9 @@ def chat(
                 continue
 
             active_conversation_id = done.get("conversation_id", active_conversation_id)
-            model = done.get("model")
-            if model:
-                console.print(f"[dim]({model})[/dim]")
+            used_model = done.get("model")
+            if used_model:
+                console.print(f"[dim]({used_model})[/dim]")
 
 
 class ApiError(RuntimeError):
@@ -443,6 +469,34 @@ def build_memories_table(memories: list[dict[str, Any]]) -> Table:
             str(memory.get("valid_until", "")),
         )
     return table
+
+
+def fetch_models(client: httpx.Client, base_url: str) -> list[dict[str, Any]]:
+    return _request_json(client, "GET", _api_url(base_url, "/api/v1/models"))
+
+
+def build_models_table(models: list[dict[str, Any]]) -> Table:
+    table = Table(title="Models")
+    table.add_column("Name")
+    table.add_column("Size")
+    for model in models:
+        size = model.get("size")
+        size_text = f"{size / 1e9:.1f} GB" if isinstance(size, int | float) else ""
+        table.add_row(str(model.get("name", "")), size_text)
+    return table
+
+
+model_app = typer.Typer(help="List Ollama models available for chat")
+app.add_typer(model_app, name="model")
+
+
+@model_app.command("list")
+def model_list() -> None:
+    """List Ollama models the server can use for chat (`pai ask --model <name>`)."""
+    settings = Settings()
+    with httpx.Client(timeout=10.0) as client:
+        models = _run_api_call(lambda: fetch_models(client, settings.api_base_url))
+    console.print(build_models_table(models or []))
 
 
 project_app = typer.Typer(help="Manage projects")

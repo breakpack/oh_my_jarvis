@@ -330,8 +330,8 @@ class SkillVersion(Base):
 
 class TelegramSession(Base):
     """Per-chat state for the Telegram bot client, so it survives bot
-    restarts (chat_id -> active conversation/project, notification poll
-    watermark)."""
+    restarts (chat_id -> active conversation/project/model, notification
+    poll watermark)."""
 
     __tablename__ = "telegram_sessions"
 
@@ -343,6 +343,7 @@ class TelegramSession(Base):
     project_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("projects.id", ondelete="SET NULL"), default=None
     )
+    model: Mapped[str | None] = mapped_column(default=None)
     last_notification_check_at: Mapped[datetime | None] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

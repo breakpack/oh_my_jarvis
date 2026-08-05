@@ -52,6 +52,7 @@ async def stream_chat(
     message: str,
     project_id: str | None,
     on_delta: Callable[[str], Awaitable[None]],
+    model: str | None = None,
 ) -> dict[str, Any]:
     """POST /api/v1/chat, calling `on_delta` for each token as it arrives.
     Returns the "done" event payload (conversation_id, message_id, model,
@@ -59,6 +60,8 @@ async def stream_chat(
     payload: dict[str, Any] = {"conversation_id": conversation_id, "message": message}
     if project_id is not None:
         payload["project_id"] = project_id
+    if model is not None:
+        payload["model"] = model
 
     url = api_url(base_url, "/api/v1/chat")
     done_payload: dict[str, Any] = {}

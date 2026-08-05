@@ -10,6 +10,7 @@ import json
 import time
 from collections.abc import AsyncIterator
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -51,6 +52,7 @@ class ChatRequest(BaseModel):
     message: str
     project_id: str | None = None
     local_only: bool = False
+    model: str | None = None
 
 
 class ConversationOut(BaseModel):
@@ -75,10 +77,17 @@ class ConversationDetailOut(BaseModel):
     messages: list[MessageOut]
 
 
-def get_model_provider() -> ModelProvider:
+class ModelOut(BaseModel):
+    name: str
+    size: int | None = None
+
+
+def get_model_provider(payload: ChatRequest) -> ModelProvider:
+    # payload.model lets a request pick any model `ollama list` knows about,
+    # overriding the OLLAMA_LOCAL_FAST_MODEL default for just this call.
     return OllamaProvider(
         base_url=settings.ollama_base_url,
-        model=settings.ollama_local_fast_model,
+        model=payload.model or settings.ollama_local_fast_model,
         keep_alive=settings.ollama_keep_alive,
     )
 
@@ -324,6 +333,20 @@ async def post_chat(
         )
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.get("/models")
+async def list_models() -> list[ModelOut]:
+    url = f"{settings.ollama_base_url.rstrip('/')}/api/tags"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Could not reach Ollama at {url}") from exc
+
+    models = response.json().get("models", [])
+    return [ModelOut(name=m["name"], size=m.get("size")) for m in models if m.get("name")]
 
 
 @router.get("/conversations")

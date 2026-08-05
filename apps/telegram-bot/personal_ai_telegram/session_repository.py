@@ -23,6 +23,7 @@ class SessionRecord:
     chat_id: str
     conversation_id: str | None
     project_id: str | None
+    model: str | None
     last_notification_check_at: datetime | None
 
 
@@ -31,6 +32,7 @@ def _to_record(row: TelegramSession) -> SessionRecord:
         chat_id=row.chat_id,
         conversation_id=str(row.conversation_id) if row.conversation_id else None,
         project_id=str(row.project_id) if row.project_id else None,
+        model=row.model,
         last_notification_check_at=row.last_notification_check_at,
     )
 
@@ -68,6 +70,15 @@ class SessionRepository:
             )
             row = result.scalar_one()
             row.project_id = uuid.UUID(project_id) if project_id else None
+            await session.commit()
+
+    async def set_model(self, chat_id: str, model: str | None) -> None:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(TelegramSession).where(TelegramSession.chat_id == chat_id)
+            )
+            row = result.scalar_one()
+            row.model = model
             await session.commit()
 
     async def advance_notification_watermark(self, chat_id: str, now: datetime) -> datetime | None:

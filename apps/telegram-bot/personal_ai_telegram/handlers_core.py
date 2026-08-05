@@ -1,5 +1,6 @@
-"""Core handlers: /start, /help, /doctor, /newconv, and the plain-text chat
-bridge (mirrors `pai ask` / `pai chat`, streamed via Telegram message edits)."""
+"""Core handlers: /start, /help, /doctor, /newconv, /model, and the
+plain-text chat bridge (mirrors `pai ask` / `pai chat`, streamed via
+Telegram message edits)."""
 
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
-from personal_ai_telegram.api_client import ApiError, stream_chat
+from personal_ai_telegram.api_client import ApiError, api_url, request_json, stream_chat
 from personal_ai_telegram.auth import require_authorized
 from personal_ai_telegram.config import Settings
 from personal_ai_telegram.session_repository import SessionRepository
@@ -23,6 +24,7 @@ HELP_TEXT = (
     "그냥 메시지를 보내면 채팅 응답을 받습니다.\n\n"
     "/doctor - 백엔드 상태 확인\n"
     "/newconv - 새 대화 시작\n"
+    "/model - 현재 모델 확인, /model <name> - 모델 전환, /model_list - 사용 가능한 모델 목록\n"
     "/project_list, /project_create\n"
     "/memory_search, /memory_list, /memory_forget\n"
     "/knowledge_search, (파일 첨부로 업로드)\n"
@@ -68,6 +70,40 @@ async def newconv(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = str(update.effective_chat.id)
     await _repo(context).set_conversation(chat_id, None)
     await update.effective_message.reply_text("새 대화를 시작합니다.")
+
+
+@require_authorized
+async def model_show_or_set(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = str(update.effective_chat.id)
+    repo = _repo(context)
+    args = context.args or []
+    if not args:
+        session = await repo.get_or_create(chat_id)
+        await update.effective_message.reply_text(f"현재 모델: {session.model or '(서버 기본값)'}")
+        return
+    model = args[0]
+    await repo.set_model(chat_id, model)
+    await update.effective_message.reply_text(f"모델 전환: {model}")
+
+
+@require_authorized
+async def model_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    settings = _settings(context)
+    client = _http_client(context)
+    try:
+        models = await request_json(client, "GET", api_url(settings.api_base_url, "/api/v1/models"))
+    except ApiError as e:
+        await update.effective_message.reply_text(f"오류: {e}")
+        return
+    except httpx.HTTPError as e:
+        await update.effective_message.reply_text(f"연결 실패: {e}")
+        return
+    models = models or []
+    if not models:
+        await update.effective_message.reply_text("사용 가능한 모델이 없습니다.")
+        return
+    lines = [f"{m.get('name', '')}" for m in models]
+    await update.effective_message.reply_text("\n".join(lines))
 
 
 @require_authorized
@@ -122,6 +158,7 @@ async def chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             text,
             session.project_id,
             on_delta,
+            session.model,
         )
     except ApiError as e:
         await placeholder.edit_text(f"오류: {e}")
