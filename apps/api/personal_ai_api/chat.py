@@ -112,6 +112,22 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
+def _identity_system_message(provider: ModelProvider) -> dict:
+    # LLMs frequently have no reliable self-knowledge of which model they are
+    # (a well-documented quirk, worse for cloud providers swapped in per
+    # request) — ground "what model are you" answers in the truth instead of
+    # letting the model guess from its own training data.
+    return {
+        "role": "system",
+        "content": (
+            "You are the assistant for a personal AI OS. You are currently running as "
+            f"the '{provider.model}' model via the {provider.provider_name} provider. "
+            "If asked what model or AI you are, answer accurately using this "
+            "information rather than guessing."
+        ),
+    }
+
+
 def _evidence_system_message(results: list[SearchResult]) -> dict:
     lines = []
     for i, result in enumerate(results, start=1):
@@ -292,6 +308,7 @@ async def post_chat(
             evidence_results = []
     if evidence_results:
         provider_messages = [_evidence_system_message(evidence_results), *provider_messages]
+    provider_messages = [_identity_system_message(provider), *provider_messages]
 
     async def event_stream() -> AsyncIterator[str]:
         started = time.monotonic()

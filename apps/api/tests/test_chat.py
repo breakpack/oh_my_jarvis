@@ -501,12 +501,26 @@ async def test_summary_is_used_as_context_and_truncates_history(client, reposito
 
     assert provider.last_request is not None
     sent = provider.last_request.messages
-    assert sent[0] == {
+    assert sent[0]["role"] == "system"  # identity message, prepended to every turn
+    assert sent[1] == {
         "role": "system",
         "content": "Earlier conversation summary: User previously asked about groceries.",
     }
-    # 12 most recent messages (of the 21 now stored) plus the summary message.
-    assert len(sent) == 13
+    # 12 most recent messages (of the 21 now stored) plus the identity and summary messages.
+    assert len(sent) == 14
+
+
+async def test_identity_system_message_names_the_actual_provider_and_model(client, repository):
+    provider = FakeOllamaProvider()
+    app.dependency_overrides[get_model_provider] = lambda: provider
+
+    client.post("/api/v1/chat", json={"conversation_id": None, "message": "who are you?"})
+
+    assert provider.last_request is not None
+    identity_message = provider.last_request.messages[0]
+    assert identity_message["role"] == "system"
+    assert provider.model in identity_message["content"]
+    assert provider.provider_name in identity_message["content"]
 
 
 async def test_conversation_summarized_after_twenty_messages(client, repository):
@@ -593,7 +607,8 @@ async def test_chat_injects_evidence_when_project_documents_match(client, knowle
     ]
 
     assert provider.last_request is not None
-    system_message = provider.last_request.messages[0]
+    assert provider.last_request.messages[0]["role"] == "system"  # identity message
+    system_message = provider.last_request.messages[1]
     assert system_message["role"] == "system"
     assert system_message["content"].startswith("Relevant documents:\n1) Kubernetes Notes (p.3): ")
     assert "x" * 200 in system_message["content"]
