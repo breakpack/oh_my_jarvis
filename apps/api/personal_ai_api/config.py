@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     # "-1" into a JSON number before sending it — Ollama's duration parser
     # rejects a bare "-1" string, it requires a unit such as "30m".)
     ollama_keep_alive: str = "-1"
+    # Cloud model (SPEC §11.3): unset = the "--cloud" / non-local_only chat
+    # path falls back to Ollama, since there's nothing to authenticate with.
+    deepseek_api_key: str | None = None
+    deepseek_base_url: str = "https://api.deepseek.com"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     log_level: str = "INFO"

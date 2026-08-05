@@ -268,7 +268,7 @@ def ask(
     ),
     local: bool = typer.Option(False, "--local", help="Force local-only processing"),
     cloud: bool = typer.Option(
-        False, "--cloud", help="Request cloud processing (not available in this phase)"
+        False, "--cloud", help="Allow cloud processing (use with --model, e.g. deepseek-chat)"
     ),
     project: str | None = typer.Option(None, "--project", help="Scope the request to a project"),
     model: str | None = typer.Option(
@@ -309,7 +309,7 @@ def chat(
     ),
     local: bool = typer.Option(False, "--local", help="Force local-only processing"),
     cloud: bool = typer.Option(
-        False, "--cloud", help="Request cloud processing (not available in this phase)"
+        False, "--cloud", help="Allow cloud processing (use with --model, e.g. deepseek-chat)"
     ),
     project: str | None = typer.Option(None, "--project", help="Scope the session to a project"),
     model: str | None = typer.Option(

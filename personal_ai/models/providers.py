@@ -1,7 +1,8 @@
 """Model provider layer (SPEC.md §11.1 ModelProvider protocol).
 
-Only the Ollama-backed local provider is implemented in this phase; cloud
-providers are added when Phase 5+ needs them (SPEC.md §11.3).
+OllamaProvider is the local-first provider; DeepSeekProvider is the first
+cloud provider (SPEC.md §11.3), used only when a request opts in (not
+local_only) and picks a "deepseek*" model.
 """
 
 from __future__ import annotations
@@ -102,4 +103,69 @@ class OllamaProvider:
         except httpx.HTTPError as exc:
             raise ModelProviderError(
                 f"Could not reach Ollama at {self._base_url}. Is it running?"
+            ) from exc
+
+
+class DeepSeekProvider:
+    """Cloud provider backed by DeepSeek's OpenAI-compatible chat completions
+    API (https://api-docs.deepseek.com)."""
+
+    provider_name = "deepseek"
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        base_url: str = "https://api.deepseek.com",
+        timeout: float = 60.0,
+    ) -> None:
+        self._api_key = api_key
+        self._base_url = base_url.rstrip("/")
+        self.model = model
+        self._timeout = timeout
+
+    async def generate(self, request: ModelRequest) -> ModelResponse:
+        content = "".join([chunk async for chunk in self.stream(request)])
+        return ModelResponse(content=content, model=self.model, provider=self.provider_name)
+
+    async def stream(self, request: ModelRequest) -> AsyncIterator[str]:
+        payload = {
+            "model": self.model,
+            "messages": request.messages,
+            "stream": True,
+            "temperature": request.temperature,
+        }
+        headers = {"Authorization": f"Bearer {self._api_key}"}
+        try:
+            async with (
+                httpx.AsyncClient(timeout=self._timeout) as client,
+                client.stream(
+                    "POST",
+                    f"{self._base_url}/chat/completions",
+                    json=payload,
+                    headers=headers,
+                ) as response,
+            ):
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[len("data:") :].strip()
+                    if data == "[DONE]":
+                        break
+                    chunk = json.loads(data)
+                    choices = chunk.get("choices") or []
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta", {}).get("content") or ""
+                    if delta:
+                        yield delta
+        except httpx.HTTPStatusError as exc:
+            raise ModelProviderError(
+                f"DeepSeek returned an error ({exc.response.status_code}) for model '{self.model}'."
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ModelProviderError(
+                f"Could not reach DeepSeek at {self._base_url}. Check DEEPSEEK_API_KEY "
+                "and network access."
             ) from exc

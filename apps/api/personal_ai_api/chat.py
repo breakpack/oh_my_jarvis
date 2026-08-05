@@ -16,6 +16,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from personal_ai.models.providers import (
+    DeepSeekProvider,
     ModelProvider,
     ModelProviderError,
     ModelRequest,
@@ -83,11 +84,26 @@ class ModelOut(BaseModel):
 
 
 def get_model_provider(payload: ChatRequest) -> ModelProvider:
-    # payload.model lets a request pick any model `ollama list` knows about,
-    # overriding the OLLAMA_LOCAL_FAST_MODEL default for just this call.
+    # payload.model lets a request pick any model `ollama list` (or, for a
+    # "deepseek*" name, DeepSeek's cloud API) knows about, overriding the
+    # OLLAMA_LOCAL_FAST_MODEL default for just this call.
+    model = payload.model
+    wants_deepseek = model is not None and model.startswith("deepseek")
+    if wants_deepseek and payload.local_only:
+        raise HTTPException(
+            status_code=400,
+            detail=f"model '{model}' requires cloud access but local_only=True was requested",
+        )
+    if wants_deepseek:
+        if not settings.deepseek_api_key:
+            raise HTTPException(status_code=400, detail="DEEPSEEK_API_KEY is not configured")
+        assert model is not None  # narrowed by wants_deepseek above
+        return DeepSeekProvider(
+            api_key=settings.deepseek_api_key, model=model, base_url=settings.deepseek_base_url
+        )
     return OllamaProvider(
         base_url=settings.ollama_base_url,
-        model=payload.model or settings.ollama_local_fast_model,
+        model=model or settings.ollama_local_fast_model,
         keep_alive=settings.ollama_keep_alive,
     )
 
@@ -337,16 +353,36 @@ async def post_chat(
 
 @router.get("/models")
 async def list_models() -> list[ModelOut]:
-    url = f"{settings.ollama_base_url.rstrip('/')}/api/tags"
+    models: list[ModelOut] = []
+
+    ollama_url = f"{settings.ollama_base_url.rstrip('/')}/api/tags"
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url)
+            response = await client.get(ollama_url)
             response.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"Could not reach Ollama at {url}") from exc
+        models.extend(
+            ModelOut(name=m["name"], size=m.get("size"))
+            for m in response.json().get("models", [])
+            if m.get("name")
+        )
+    except httpx.HTTPError:
+        pass  # Ollama being unreachable shouldn't hide any configured cloud models
 
-    models = response.json().get("models", [])
-    return [ModelOut(name=m["name"], size=m.get("size")) for m in models if m.get("name")]
+    if settings.deepseek_api_key:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    f"{settings.deepseek_base_url.rstrip('/')}/models",
+                    headers={"Authorization": f"Bearer {settings.deepseek_api_key}"},
+                )
+                response.raise_for_status()
+            models.extend(
+                ModelOut(name=m["id"]) for m in response.json().get("data", []) if m.get("id")
+            )
+        except httpx.HTTPError:
+            pass  # DeepSeek unreachable/misconfigured shouldn't hide the local model list
+
+    return models
 
 
 @router.get("/conversations")
