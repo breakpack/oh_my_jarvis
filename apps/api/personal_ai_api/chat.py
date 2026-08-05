@@ -76,7 +76,11 @@ class ConversationDetailOut(BaseModel):
 
 
 def get_model_provider() -> ModelProvider:
-    return OllamaProvider(base_url=settings.ollama_base_url, model=settings.ollama_local_fast_model)
+    return OllamaProvider(
+        base_url=settings.ollama_base_url,
+        model=settings.ollama_local_fast_model,
+        keep_alive=settings.ollama_keep_alive,
+    )
 
 
 def _sse(event: str, data: dict) -> str:

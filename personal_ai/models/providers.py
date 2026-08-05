@@ -34,6 +34,16 @@ class ModelProviderError(RuntimeError):
     """Raised when a provider cannot fulfill a request; message is safe to show the user."""
 
 
+def normalize_keep_alive(value: int | str) -> int | str:
+    """Ollama's duration parser requires a unit (e.g. "30m") and rejects a
+    bare numeric string like "-1" with "missing unit in duration" — send
+    those as a JSON number instead. Duration strings (e.g. "30m") pass
+    through unchanged."""
+    if isinstance(value, str) and value.lstrip("-").isdigit():
+        return int(value)
+    return value
+
+
 class ModelProvider(Protocol):
     model: str
     provider_name: str
@@ -48,17 +58,28 @@ class OllamaProvider:
 
     provider_name = "ollama"
 
-    def __init__(self, base_url: str, model: str, timeout: float = 60.0) -> None:
+    def __init__(
+        self, base_url: str, model: str, timeout: float = 60.0, keep_alive: int | str = "-1"
+    ) -> None:
         self._base_url = base_url.rstrip("/")
         self.model = model
         self._timeout = timeout
+        # Ollama unloads a model 5m after its last request unless keep_alive says
+        # otherwise; -1 keeps it resident indefinitely so chat replies after an
+        # idle gap don't pay the reload cost again.
+        self._keep_alive = normalize_keep_alive(keep_alive)
 
     async def generate(self, request: ModelRequest) -> ModelResponse:
         content = "".join([chunk async for chunk in self.stream(request)])
         return ModelResponse(content=content, model=self.model, provider=self.provider_name)
 
     async def stream(self, request: ModelRequest) -> AsyncIterator[str]:
-        payload = {"model": self.model, "messages": request.messages, "stream": True}
+        payload = {
+            "model": self.model,
+            "messages": request.messages,
+            "stream": True,
+            "keep_alive": self._keep_alive,
+        }
         try:
             async with (
                 httpx.AsyncClient(timeout=self._timeout) as client,

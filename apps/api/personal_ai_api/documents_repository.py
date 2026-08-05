@@ -58,7 +58,9 @@ def _parse_uuid(value: str) -> uuid.UUID:
 
 def get_embedding_provider() -> OllamaEmbeddingProvider:
     return OllamaEmbeddingProvider(
-        base_url=settings.ollama_base_url, model=settings.ollama_embedding_model
+        base_url=settings.ollama_base_url,
+        model=settings.ollama_embedding_model,
+        keep_alive=settings.ollama_keep_alive,
     )
 
 

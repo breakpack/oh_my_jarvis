@@ -9,6 +9,12 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_local_fast_model: str = "gemma4:e2b"
     ollama_embedding_model: str = "bge-m3:latest"
+    # "-1" = keep the model resident in memory indefinitely instead of Ollama's
+    # default 5m-idle unload; set e.g. "30m" to trade memory back for latency.
+    # (OllamaProvider/OllamaEmbeddingProvider normalize a numeric string like
+    # "-1" into a JSON number before sending it — Ollama's duration parser
+    # rejects a bare "-1" string, it requires a unit such as "30m".)
+    ollama_keep_alive: str = "-1"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     log_level: str = "INFO"
