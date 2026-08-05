@@ -1,4 +1,4 @@
-.PHONY: setup dev dev-infra dev-api dev-web dev-cli test lint format doctor migrate
+.PHONY: setup dev dev-infra dev-api dev-web dev-cli dev-telegram test lint format doctor migrate
 
 # Load .env into every target's environment (e.g. DATABASE_URL for alembic/pai).
 ifneq (,$(wildcard ./.env))
@@ -23,6 +23,9 @@ dev-api:
 dev-web:
 	npm run dev --workspace=apps/web
 
+dev-telegram:
+	uv run --project apps/telegram-bot python -m personal_ai_telegram.main
+
 dev: dev-infra
 	@echo "Infra started. Run 'make dev-api' and 'make dev-web' in separate shells."
 
@@ -33,13 +36,14 @@ test:
 	uv run --project apps/api pytest
 	npm run test --workspace=apps/web --if-present
 
-PY_SRC := personal_ai apps/api apps/cli
+PY_SRC := personal_ai apps/api apps/cli apps/telegram-bot
 
 lint:
 	uv run --project apps/api ruff check $(PY_SRC)
 	uv run --project apps/api ruff format --check $(PY_SRC)
 	uv run --project apps/api mypy personal_ai apps/api
 	uv run --project apps/api mypy apps/cli
+	uv run --project apps/telegram-bot mypy apps/telegram-bot
 	npm run lint --workspace=apps/web
 
 format:

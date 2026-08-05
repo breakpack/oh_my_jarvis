@@ -6,7 +6,7 @@ requires-python = ">=3.11"
 dependencies = []
 
 [tool.uv.workspace]
-members = ["apps/api", "apps/cli"]
+members = ["apps/api", "apps/cli", "apps/telegram-bot"]
 
 [tool.ruff]
 line-length = 100
@@ -29,7 +29,14 @@ python_version = "3.11"
 ignore_missing_imports = true
 warn_unused_ignores = true
 
+[[tool.mypy.overrides]]
+# telegram's stubs type effective_message/effective_chat as optional for every
+# update kind, but they're always present for the command/text/document/
+# callback-query updates this bot registers handlers for.
+module = "personal_ai_telegram.*"
+disable_error_code = ["union-attr"]
+
 [tool.pytest.ini_options]
-testpaths = ["tests", "apps/api/tests", "apps/cli/tests"]
+testpaths = ["tests", "apps/api/tests", "apps/cli/tests", "apps/telegram-bot/tests"]
 asyncio_mode = "auto"
 addopts = "--import-mode=importlib"
