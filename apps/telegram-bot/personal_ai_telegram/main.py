@@ -4,6 +4,8 @@ Telegram (SPEC.md §4 Clients)."""
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 
 import httpx
@@ -32,13 +34,22 @@ async def _post_init(application: Application) -> None:
     settings: Settings = application.bot_data["settings"]
     application.bot_data["http_client"] = httpx.AsyncClient()
     application.bot_data["session_repository"] = default_session_repository
-    application.create_task(
+    # Not application.create_task(): the Application isn't marked "running" yet
+    # at post_init time, so PTB would skip its own task bookkeeping (error
+    # reporting, graceful cancellation) and warn. We track and cancel it
+    # ourselves in _post_shutdown instead.
+    application.bot_data["notification_poll_task"] = asyncio.create_task(
         handlers_notification.notification_poll_loop(application), name="notification-poll-loop"
     )
     logger.info("bot started; polling API at %s", settings.api_base_url)
 
 
 async def _post_shutdown(application: Application) -> None:
+    task: asyncio.Task | None = application.bot_data.get("notification_poll_task")
+    if task is not None:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
     client: httpx.AsyncClient | None = application.bot_data.get("http_client")
     if client is not None:
         await client.aclose()
