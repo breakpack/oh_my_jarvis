@@ -175,7 +175,31 @@ def _container_line(**fields) -> str:
     return json.dumps(base)
 
 
+async def test_docker_health_source_returns_empty_when_unconfigured(monkeypatch):
+    monkeypatch.delenv("PROACTIVE_DOCKER_CONTAINERS", raising=False)
+    calls = []
+    monkeypatch.setattr(
+        sources_module.subprocess, "run", lambda *a, **kw: calls.append(a) or _completed()
+    )
+
+    events = await DockerHealthSource().check()
+
+    assert events == []
+    assert calls == []  # never even attempted a subprocess call
+
+
+async def test_docker_health_source_ignores_unwatched_container_names(monkeypatch):
+    monkeypatch.setenv("PROACTIVE_DOCKER_CONTAINERS", "compose")
+    stdout = _container_line(Names="unrelated-project", Status="Exited (1) now") + "\n"
+    monkeypatch.setattr(
+        sources_module.subprocess, "run", lambda *a, **kw: _completed(stdout=stdout)
+    )
+
+    assert await DockerHealthSource().check() == []
+
+
 async def test_docker_health_source_flags_unhealthy_status(monkeypatch):
+    monkeypatch.setenv("PROACTIVE_DOCKER_CONTAINERS", "some-container")
     stdout = _container_line(Status="Up 2 hours (unhealthy)") + "\n"
     monkeypatch.setattr(
         sources_module.subprocess, "run", lambda *a, **kw: _completed(stdout=stdout)
@@ -190,6 +214,7 @@ async def test_docker_health_source_flags_unhealthy_status(monkeypatch):
 
 
 async def test_docker_health_source_flags_abnormal_exit(monkeypatch):
+    monkeypatch.setenv("PROACTIVE_DOCKER_CONTAINERS", "some-container")
     stdout = _container_line(Status="Exited (1) 5 minutes ago") + "\n"
     monkeypatch.setattr(
         sources_module.subprocess, "run", lambda *a, **kw: _completed(stdout=stdout)
@@ -202,6 +227,7 @@ async def test_docker_health_source_flags_abnormal_exit(monkeypatch):
 
 
 async def test_docker_health_source_ignores_clean_exit(monkeypatch):
+    monkeypatch.setenv("PROACTIVE_DOCKER_CONTAINERS", "some-container")
     stdout = _container_line(Status="Exited (0) 5 minutes ago") + "\n"
     monkeypatch.setattr(
         sources_module.subprocess, "run", lambda *a, **kw: _completed(stdout=stdout)
@@ -211,6 +237,7 @@ async def test_docker_health_source_ignores_clean_exit(monkeypatch):
 
 
 async def test_docker_health_source_ignores_healthy_running_containers(monkeypatch):
+    monkeypatch.setenv("PROACTIVE_DOCKER_CONTAINERS", "some-container")
     stdout = _container_line(Status="Up 3 hours (healthy)") + "\n"
     monkeypatch.setattr(
         sources_module.subprocess, "run", lambda *a, **kw: _completed(stdout=stdout)
@@ -220,6 +247,7 @@ async def test_docker_health_source_ignores_healthy_running_containers(monkeypat
 
 
 async def test_docker_health_source_handles_multiple_lines_and_mixed_health(monkeypatch):
+    monkeypatch.setenv("PROACTIVE_DOCKER_CONTAINERS", "some-container")
     stdout = "\n".join(
         [
             _container_line(ID="1", Status="Up 1 hour (healthy)"),
@@ -238,6 +266,7 @@ async def test_docker_health_source_handles_multiple_lines_and_mixed_health(monk
 
 
 async def test_docker_health_source_skips_malformed_json_lines(monkeypatch):
+    monkeypatch.setenv("PROACTIVE_DOCKER_CONTAINERS", "some-container")
     stdout = "not json at all\n" + _container_line(ID="2", Status="Exited (1) now") + "\n"
     monkeypatch.setattr(
         sources_module.subprocess, "run", lambda *a, **kw: _completed(stdout=stdout)
@@ -258,6 +287,7 @@ async def test_docker_health_source_skips_malformed_json_lines(monkeypatch):
     ],
 )
 async def test_docker_health_source_swallows_failures_and_returns_empty(monkeypatch, fake_run):
+    monkeypatch.setenv("PROACTIVE_DOCKER_CONTAINERS", "some-container")
     monkeypatch.setattr(sources_module.subprocess, "run", fake_run)
 
     assert await DockerHealthSource().check() == []

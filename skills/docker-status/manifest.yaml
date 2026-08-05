@@ -1,0 +1,37 @@
+api_version: personal-ai-os/v1
+kind: Skill
+metadata:
+  name: docker-status
+  display_name: Docker Status
+  version: 0.1.0
+  description: 이 머신에서 실행 중이거나 중지된 모든 Docker 컨테이너의 이름/이미지/상태를 온디맨드로 조회한다 (읽기 전용).
+  license: MIT
+  author: local
+  tags:
+    - docker
+    - infra
+    - ops
+runtime:
+  type: python
+  entrypoint: workflow.py
+  timeout_seconds: 30
+  network_access: none
+models:
+  preferred: []
+  local_only_supported: true
+capabilities:
+  tools:
+    - docker.list_containers
+  resources: []
+permissions:
+  risk_level: read
+  scopes:
+    - docker.read
+input_schema: input.schema.json
+output_schema: output.schema.json
+verification:
+  required: false
+  checks: []
+rollback:
+  supported: false
+  strategy: not_applicable_read_only

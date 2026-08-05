@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "docker-status output",
+  "type": "object",
+  "properties": {
+    "success": { "type": "boolean" },
+    "summary": { "type": "string" },
+    "data": {
+      "type": ["object", "null"],
+      "properties": {
+        "containers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "Names": { "type": "string" },
+              "Image": { "type": "string" },
+              "Status": { "type": "string" },
+              "State": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "error": { "type": ["string", "null"] }
+  },
+  "required": ["success", "summary"]
+}

@@ -5,11 +5,13 @@ backend (no gh auth, docker not running, repo not configured, ...) returns
 an empty list instead of raising, so a broken source never blocks the
 others or the pipeline that calls them.
 
-DockerHealthSource queries every container on the machine, not just this
-project's — the point is whole-machine health monitoring, and this Mac
-routinely runs unrelated Docker containers from other projects. It only
-ever reads (`docker ps -a`); nothing here starts, stops, or touches any
-container.
+DockerHealthSource only watches containers whose name contains one of the
+PROACTIVE_DOCKER_CONTAINERS substrings (comma-separated env var); empty
+(the default) means the source does nothing. This Mac routinely runs
+unrelated Docker containers from other projects, so unscoped whole-machine
+monitoring would be noisy by default — scope it explicitly to opt in. It
+only ever reads (`docker ps -a`); nothing here starts, stops, or touches
+any container.
 """
 
 from __future__ import annotations
@@ -140,10 +142,19 @@ def _is_unhealthy_status(status: str) -> bool:
     return status.startswith("Exited") and not status.startswith("Exited (0)")
 
 
+def _docker_containers() -> list[str]:
+    raw = os.environ.get("PROACTIVE_DOCKER_CONTAINERS", "")
+    return [name.strip() for name in raw.split(",") if name.strip()]
+
+
 class DockerHealthSource:
     name = "docker_health"
 
     async def check(self) -> list[RawEvent]:
+        watched = _docker_containers()
+        if not watched:
+            return []
+
         command = ["docker", "ps", "-a", "--format", "{{json .}}"]
         try:
             proc = subprocess.run(  # noqa: S603 — argument list, shell=False, timeout set
@@ -167,6 +178,10 @@ class DockerHealthSource:
             try:
                 container = json.loads(line)
             except json.JSONDecodeError:
+                continue
+
+            names = container.get("Names", "")
+            if not any(watch in names for watch in watched):
                 continue
 
             status = container.get("Status", "")
