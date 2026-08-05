@@ -1,0 +1,37 @@
+api_version: personal-ai-os/v1
+kind: Skill
+metadata:
+  name: gmail-lookup
+  display_name: Gmail Lookup
+  version: 0.1.0
+  description: Gmail 검색 문법으로 받은편지함을 조회해 제목/발신자/날짜/미리보기를 반환한다.
+  license: MIT
+  author: local
+  tags:
+    - gmail
+    - email
+    - inbox
+runtime:
+  type: python
+  entrypoint: workflow.py
+  timeout_seconds: 30
+  network_access: allowlist
+models:
+  preferred: []
+  local_only_supported: true
+capabilities:
+  tools:
+    - gmail.search_messages
+  resources: []
+permissions:
+  risk_level: read
+  scopes:
+    - gmail.readonly
+input_schema: input.schema.json
+output_schema: output.schema.json
+verification:
+  required: false
+  checks: []
+rollback:
+  supported: false
+  strategy: not_applicable_read_only

@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "obsidian-lookup input",
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "파일명 또는 내용에서 찾을 문자열"
+    },
+    "path": {
+      "type": "string",
+      "description": "볼트 루트 기준 상대경로의 특정 노트를 전체 조회 (지정 시 query 무시)"
+    }
+  },
+  "additionalProperties": false
+}

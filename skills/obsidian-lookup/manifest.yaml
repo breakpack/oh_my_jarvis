@@ -1,0 +1,37 @@
+api_version: personal-ai-os/v1
+kind: Skill
+metadata:
+  name: obsidian-lookup
+  display_name: Obsidian Lookup
+  version: 0.1.0
+  description: 로컬 Obsidian 볼트에서 노트를 파일명/내용으로 검색하거나 특정 노트 전체를 읽는다.
+  license: MIT
+  author: local
+  tags:
+    - obsidian
+    - notes
+    - knowledge
+runtime:
+  type: python
+  entrypoint: workflow.py
+  timeout_seconds: 30
+  network_access: none
+models:
+  preferred: []
+  local_only_supported: true
+capabilities:
+  tools:
+    - obsidian.search_notes
+  resources: []
+permissions:
+  risk_level: read
+  scopes:
+    - obsidian.read
+input_schema: input.schema.json
+output_schema: output.schema.json
+verification:
+  required: false
+  checks: []
+rollback:
+  supported: false
+  strategy: not_applicable_read_only

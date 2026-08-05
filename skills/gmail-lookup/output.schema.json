@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "gmail-lookup output",
+  "type": "object",
+  "properties": {
+    "success": { "type": "boolean" },
+    "summary": { "type": "string" },
+    "data": {
+      "type": ["object", "null"],
+      "properties": {
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "subject": { "type": "string" },
+              "from": { "type": "string" },
+              "date": { "type": "string" },
+              "snippet": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "error": { "type": ["string", "null"] }
+  },
+  "required": ["success", "summary"]
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "gmail-lookup input",
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Gmail 검색 쿼리 (예: 'from:example.com is:unread')"
+    },
+    "max_results": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50,
+      "default": 10,
+      "description": "반환할 최대 메일 개수"
+    }
+  },
+  "required": ["query"],
+  "additionalProperties": false
+}
