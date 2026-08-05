@@ -15,8 +15,10 @@ setup:
 dev-infra:
 	$(COMPOSE) up -d
 
+API_PORT ?= 8000
+
 dev-api:
-	uv run --project apps/api uvicorn personal_ai_api.main:app --reload --host 0.0.0.0 --port 8000
+	uv run --project apps/api uvicorn personal_ai_api.main:app --reload --host 0.0.0.0 --port $(API_PORT)
 
 dev-web:
 	npm run dev --workspace=apps/web
